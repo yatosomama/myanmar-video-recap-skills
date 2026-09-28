@@ -4,7 +4,9 @@
   <img src="https://zenstory.ai/brand/zenstory-ai-mark.svg" alt="" width="76" height="76">
 </p>
 
-<h1 align="center">Video Recap Skills</h1>
+<h1 align="center">Video Recap Skills — Myanmar Edition</h1>
+
+> **Independent Myanmar edition; not the upstream original.** This repository is a modified edition of [zenstory-ai/video-recap-skills](https://github.com/zenstory-ai/video-recap-skills). It localizes short-drama recaps for Burmese by default and adds Burmese Edge TTS, Chinese-subtitle story grounding, and a corresponding editing workflow. It is independently maintained and is not an official upstream release or endorsement. See the upstream repository for the original project and MIT license; this repository preserves the original license and attribution.
 
 <p align="center">
   <b>Turn short dramas and other videos into Burmese-narration recaps: six skills inside the coding agent you already use, Burmese Edge TTS by default, and an optional JianYing/CapCut draft to keep editing by hand.</b>

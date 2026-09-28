@@ -2,7 +2,9 @@
   <img src="https://zenstory.ai/brand/zenstory-ai-mark.svg" alt="" width="76" height="76">
 </p>
 
-<h1 align="center">Video Recap Skills</h1>
+<h1 align="center">Video Recap Skills — 缅甸语独立版</h1>
+
+> **缅甸语独立改版，非上游原版。** 本仓库基于 [zenstory-ai/video-recap-skills](https://github.com/zenstory-ai/video-recap-skills) 修改，重点将短剧解说默认本地化为缅甸语，并加入 Edge TTS 缅甸语配音、中文字幕剧情参考和相应剪辑流程。它由社区独立维护，不代表上游官方发布或背书。原项目及 MIT 许可信息见上游仓库；本仓库保留原有许可与归属说明。
 
 <p align="center">
   <b>把短剧或其他视频做成缅甸语解说成片：六个技能装进你正在用的编程 Agent，默认用 Edge TTS 缅甸语旁白，成片还能一键导成剪映草稿接着改。</b>
