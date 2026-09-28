@@ -159,7 +159,7 @@ full 模式直接按原片时间写；cut 第二阶段先查看 `edited_source.m
 | `narration` | 解说文本 |
 | `pause_after_ms` | 段后停顿，默认 250ms |
 | `overlaps_speech` | 是否与原对白重叠；连续铺底窗口通常为 `true`，真正静音槽才为 `false` |
-| `emotion` | 整个解说块的 MiMo TTS 情绪/语气标签 |
+| `emotion` | 整个解说块的 TTS 情绪/语气提示；仅受支持的 TTS provider 会使用 |
 
 ### 4.1 写作规则
 

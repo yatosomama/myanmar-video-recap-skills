@@ -16,6 +16,7 @@ from email.utils import parsedate_to_datetime
 # ── 配置 ──────────────────────────────────────────────────────────────
 
 DEFAULT_MIMO_API_URL = "https://api.xiaomimimo.com/v1"
+DEFAULT_MULTIMODAL_API_URL = "https://api.openai.com/v1"
 DEFAULT_MIMO_TOKEN_PLAN_CLUSTER = "cn"
 MIMO_TOKEN_PLAN_API_URLS = {
     "cn": "https://token-plan-cn.xiaomimimo.com/v1",
@@ -94,14 +95,22 @@ def env_float(name, default, *, minimum=None):
     return _env_number(name, default, float, minimum)
 
 
-# Single MiMo credential powers ASR + VLM + TTS. Per-capability overrides
-# (MIMO_VIDEO_API_KEY / MIMO_TTS_API_KEY / MIMO_ASR_API_KEY and their *_API_URL forms)
-# are optional and fall back to MIMO_API_KEY / MIMO_API_URL. Token-Plan keys (tp-*) auto-
-# route to the Token-Plan cluster base URL; pay-as-you-go keys use api.xiaomimimo.com.
-_mimo_api_key = os.environ.get("MIMO_API_KEY", "")
-_mimo_video_api_key = os.environ.get("MIMO_VIDEO_API_KEY", "") or _mimo_api_key
-_mimo_asr_api_key = os.environ.get("MIMO_ASR_API_KEY", "") or _mimo_api_key
-_raw_api_url = os.environ.get("MIMO_API_URL") or default_mimo_api_url(is_mimo_token_plan_key(_mimo_api_key))
+# A generic OpenAI-compatible vision endpoint can be configured independently.
+# Legacy MiMo variables remain a fallback for existing installations.
+_legacy_mimo_api_key = os.environ.get("MIMO_API_KEY", "")
+_multimodal_api_key = os.environ.get("MULTIMODAL_API_KEY", "")
+_multimodal_api_url = os.environ.get("MULTIMODAL_API_URL", "")
+_multimodal_model = os.environ.get("MULTIMODAL_MODEL", "")
+_generic_multimodal = bool(_multimodal_api_key or _multimodal_api_url or _multimodal_model)
+_api_provider = "openai-compatible" if _generic_multimodal else "mimo"
+_mimo_api_key = _multimodal_api_key or _legacy_mimo_api_key
+_mimo_video_api_key = os.environ.get("MIMO_VIDEO_API_KEY", "") or _legacy_mimo_api_key
+_mimo_asr_api_key = os.environ.get("MIMO_ASR_API_KEY", "") or _legacy_mimo_api_key
+_raw_api_url = (
+    _multimodal_api_url or DEFAULT_MULTIMODAL_API_URL
+    if _generic_multimodal
+    else os.environ.get("MIMO_API_URL") or default_mimo_api_url(is_mimo_token_plan_key(_legacy_mimo_api_key))
+)
 _raw_mimo_video_api_url = (
     os.environ.get("MIMO_VIDEO_API_URL")
     or os.environ.get("MIMO_API_URL")
@@ -114,9 +123,13 @@ _raw_mimo_asr_api_url = (
 )
 
 CONFIG = {
+    "api_provider": _api_provider,
     "api_url": normalize_api_url(_raw_api_url),
     "api_key": _mimo_api_key,
-    "api_env_var": "MIMO_API_KEY",
+    "api_env_var": "MULTIMODAL_API_KEY" if _generic_multimodal else "MIMO_API_KEY",
+    "multimodal_api_configured": bool(
+        (_multimodal_api_url or _multimodal_api_key) and _multimodal_model
+    ) if _generic_multimodal else bool(_legacy_mimo_api_key),
     "mimo_api_url": normalize_api_url(_raw_api_url),
     "mimo_api_key": _mimo_api_key,
     "mimo_video_api_url": normalize_api_url(_raw_mimo_video_api_url),
@@ -124,9 +137,9 @@ CONFIG = {
     "mimo_asr_api_url": normalize_api_url(_raw_mimo_asr_api_url),
     "mimo_asr_api_key": _mimo_asr_api_key,
     "mimo_asr_env_var": "MIMO_ASR_API_KEY" if os.environ.get("MIMO_ASR_API_KEY") else "MIMO_API_KEY",
-    "mimo_model": os.environ.get("MIMO_MODEL", DEFAULT_MIMO_MODEL),
+    "mimo_model": _multimodal_model or os.environ.get("MIMO_MODEL", DEFAULT_MIMO_MODEL),
     "mimo_video_model": os.environ.get("MIMO_VIDEO_MODEL") or os.environ.get("MIMO_MODEL", DEFAULT_MIMO_MODEL),
-    "vlm_model": os.environ.get("MIMO_MODEL", DEFAULT_MIMO_MODEL),
+    "vlm_model": _multimodal_model or os.environ.get("MIMO_MODEL", "" if _generic_multimodal else DEFAULT_MIMO_MODEL),
     "mimo_asr_model": os.environ.get("MIMO_ASR_MODEL", DEFAULT_MIMO_ASR_MODEL),
     "mimo_asr_language": os.environ.get("MIMO_ASR_LANGUAGE", "auto"),  # auto | zh | en
     "mimo_asr_base64_max_mb": env_float("MIMO_ASR_BASE64_MAX_MB", 10.0, minimum=1.0),
@@ -287,19 +300,27 @@ def _sanitize_api_error(value, limit=500):
     return text[:limit]
 
 def _api_headers(api_provider=None, api_url=None, api_key=None):
-    """Build MiMo auth headers (OpenAI-compatible chat/completions with an api-key header)."""
-    del api_provider, api_url  # MiMo is the only provider; signature kept for call sites
+    """Build auth headers for the selected OpenAI-compatible chat endpoint."""
+    del api_url
     key = CONFIG["api_key"] if api_key is None else api_key
-    return {
+    headers = {
         "Content-Type": "application/json",
         "User-Agent": "video-recap/1.0",
-        "api-key": key,
     }
+    if not key:
+        return headers
+    if (api_provider or CONFIG["api_provider"]) == "mimo":
+        headers["api-key"] = key
+    else:
+        headers["Authorization"] = f"Bearer {key}"
+    return headers
 
 def _prepare_api_payload(payload, api_provider=None, api_url=None):
-    """Normalize payload fields for MiMo's OpenAI-compatible chat/completions API."""
-    del api_provider, api_url
+    """Apply provider-specific request fields while keeping generic vision payloads standard."""
+    del api_url
     normalized = dict(payload)
+    if (api_provider or CONFIG["api_provider"]) != "mimo":
+        return normalized
     if "max_tokens" in normalized and "max_completion_tokens" not in normalized:
         normalized["max_completion_tokens"] = normalized.pop("max_tokens")
     model = str(normalized.get("model") or "")
@@ -356,8 +377,9 @@ def api_call(payload, max_retries=8, *, api_provider=None, api_url=None, api_key
     集群的配额窗口常以分钟计，所以 429 在没有 Retry-After 时也至少等 10s，给窗口时间复位。
     """
     endpoint = normalize_api_url(api_url if api_url is not None else CONFIG["api_url"])
-    headers = _api_headers(api_provider=api_provider, api_url=endpoint, api_key=api_key)
-    data = json.dumps(_prepare_api_payload(payload, api_provider=api_provider, api_url=endpoint)).encode("utf-8")
+    provider = api_provider or CONFIG["api_provider"]
+    headers = _api_headers(api_provider=provider, api_url=endpoint, api_key=api_key)
+    data = json.dumps(_prepare_api_payload(payload, api_provider=provider, api_url=endpoint)).encode("utf-8")
 
     for attempt in range(max_retries):
         try:

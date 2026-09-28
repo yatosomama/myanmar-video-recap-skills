@@ -26,7 +26,7 @@
   <img alt="Skills 6" src="https://img.shields.io/badge/Skills-6-081431?style=flat-square">
   <a href="https://www.python.org/"><img alt="Python 3.10%2B" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white"></a>
   <a href="https://github.com/zenstory-ai/video-recap-skills/actions/workflows/skill-validate.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/zenstory-ai/video-recap-skills/skill-validate.yml?style=flat-square&label=CI"></a>
-  <a href="https://platform.xiaomimimo.com"><img alt="AI Xiaomi%20MiMo" src="https://img.shields.io/badge/AI-Xiaomi%20MiMo-34A853?style=flat-square"></a>
+  <img alt="OpenAI-compatible multimodal models" src="https://img.shields.io/badge/AI-Multimodal%20models-34A853?style=flat-square">
   <a href="./LICENSE"><img alt="License MIT" src="https://img.shields.io/badge/License-MIT-1F6FEB?style=flat-square"></a>
 </p>
 
@@ -45,25 +45,26 @@
 六个技能装进 Claude Code、Codex CLI、OpenCode 或 OpenClaw，你用自然语言给出视频路径和想要的成片，Agent 负责理解画面与对白、
 决定故事与视听方案、剪辑、写稿、配音、混音和字幕。支持 `.mp4 / .mov / .mkv / .webm`。
 
-- **缅甸语配音默认无需 API key。** ASR、VLM 仍走[小米 MiMo](https://platform.xiaomimimo.com)；缅甸语旁白默认用 Edge TTS（需 `python -m pip install edge-tts` 和网络连接），不需 GPU，也不下载本地模型。配音也可切换到其他 provider。
+- **模型不锁定单一品牌。** 场景视觉理解使用可配置的多模态模型；只要服务端提供 OpenAI-compatible Chat Completions 图像输入即可，可接云端或本地模型。缅甸语旁白默认用 Edge TTS（需 `python -m pip install edge-tts` 和网络连接），不需 GPU，也不下载本地模型。
 - **先做创作决定，再分配声音。** Agent 先比较剪辑假设，把观众承诺、POV、戏剧问题和"发生了什么变化"的 beat 写进 `recap_story_plan.json`，再给每一拍指定画面任务和声音归属：旁白只在有明确任务时整块配音，强对白、动作声或沉默可以完整主导一拍。
 - **先剪后配，时间轴天然对齐。** 剪辑模式先把长视频剪成成片，再对着成片写解说；一次可以传多个视频，按 `source_id` 选段剪成一条主线；每个视频的分析沉淀成文件系统素材库，下次直接复用。
 - **成片之外还能继续改。** 多轨时间线 `timeline.json` 可一键导出剪映草稿，原片、解说、BGM、字幕、图片叠层都可编辑；自带一份准确字幕文件就会被当作原声字幕的首选来源。
-- **每一步都留下可核对的记录。** 旁白 lint、组装 QC、交付 QC 和看片修改日志都是机器可读文件；可选的 MiMo 成片顾问只给建议，缺 key、限流或超时都不会阻断出片。
+- **每一步都留下可核对的记录。** 旁白 lint、组装 QC、交付 QC 和看片修改日志都是机器可读文件；可选的多模态成片顾问只给建议，缺配置、限流或超时都不会阻断出片。
 
 ## 安装
 
-前提：Python 3.10 或更新版本，`PATH` 上有带 libass 的 `ffmpeg`（默认烧录字幕）、`edge-tts` 命令，以及用于视频理解的[小米 MiMo](https://platform.xiaomimimo.com) API Key。
+前提：Python 3.10 或更新版本，`PATH` 上有带 libass 的 `ffmpeg`（默认烧录字幕）、`edge-tts` 命令，以及一个支持 OpenAI-compatible 图像输入的多模态模型 API。
 
     python -m pip install edge-tts
 
 ```bash
 brew install ffmpeg                        # macOS；Debian/Ubuntu 用 apt，Windows 用 choco / scoop / winget
-export MIMO_API_KEY=your-mimo-key          # Windows PowerShell：$env:MIMO_API_KEY="your-mimo-key"
-export MIMO_TOKEN_PLAN_CLUSTER=cn          # 仅 tp-* Token Plan key 需要：cn | sgp | ams
+export MULTIMODAL_API_URL=https://api.openai.com/v1  # 填写服务商的 OpenAI-compatible API 地址
+export MULTIMODAL_API_KEY=your-api-key               # 本地免密服务可省略
+export MULTIMODAL_MODEL=your-vision-model            # 填写服务端支持图像输入的模型 ID
 ```
 
-MiMo 不需要订阅，`sk-*` key 按量付费；本项目实测一条完整视频约 1.3 元，费用随视频时长和调用量变化。
+模型供应商、部署方式和计费由你配置的服务决定；请确认模型支持 Chat Completions 中的 `image_url` 输入。使用中文字幕时，流程可跳过 ASR；未提供字幕且要分析原对白时，仍需单独配置 ASR provider。
 
 在 Claude Code 里执行：
 
@@ -118,14 +119,14 @@ export FISH_API_KEY=your-fish-key
 export FISH_TTS_REFERENCE_ID=your-voice-model-id  # 可选；默认内置"娱乐扒妹"解说音色
 ```
 
-默认模型 `s2.1-pro-free`，默认音色"娱乐扒妹"（reference ID `5653cea4ac83480aaf2bf45406556185`），计费以 Fish Audio 官方为准。ASR 和 VLM 仍走 MiMo；本地参考音频克隆（`--voice-ref`）只在 MiMo 路径可用。
+默认模型 `s2.1-pro-free`，默认音色"娱乐扒妹"（reference ID `5653cea4ac83480aaf2bf45406556185`），计费以 Fish Audio 官方为准。参考音频克隆（`--voice-ref`）仅由支持克隆的 TTS provider 提供，与视觉模型配置独立。
 
 </details>
 
 装好后让 Agent 自检一次：
 
 ```text
-检查 video-recap 的运行环境，告诉我 Python、ffmpeg/libass 和 MiMo 配置是否就绪。
+检查 video-recap 的运行环境，告诉我 Python、ffmpeg/libass 和多模态模型 endpoint 是否就绪。
 ```
 
 > 变更见 [CHANGELOG.md](CHANGELOG.md) 与 [Releases](https://github.com/zenstory-ai/video-recap-skills/releases)。仓库已从 `worldwonderer/video-recap-skills` 迁到 `zenstory-ai/video-recap-skills`，按旧地址安装的用户请重新指向新仓库。
@@ -325,7 +326,7 @@ Agent 会自动完成理解、故事与视听规划、剪辑、写稿、配音�
 flowchart LR
     video(["视频"]) --> understand["① 理解<br/>场景 · ASR · VLM"]
     research["背景调研 · 可选"] -.-> understand
-    understand --> script["② 导演 · 剪辑 · 写稿<br/>Agent"] --> voiceover["③ 配音<br/>MiMo / Fish Audio"] --> assemble["④ 组装<br/>混音 · 字幕"] --> output(["Recap"])
+    understand --> script["② 导演 · 剪辑 · 写稿<br/>Agent"] --> voiceover["③ 配音<br/>Edge TTS / optional TTS provider"] --> assemble["④ 组装<br/>混音 · 字幕"] --> output(["Recap"])
     understand -. 剪辑模式 · 先剪后配 .-> cut["剪辑<br/>先剪成片"] -.-> script
     classDef io fill:#4f86c6,stroke:#3a6298,color:#fff;
     classDef stage fill:#eef6ff,stroke:#4f86c6,color:#1f2937;
@@ -340,10 +341,10 @@ flowchart LR
 | 技能 | 职责 | 输入 → 输出 |
 |---|---|---|
 | [`video-recap`](skills/video-recap/) | 编排器与环境自检；日常端到端制作用它 | `视频` → `recap_<名>.mp4` |
-| [`video-understanding`](skills/video-understanding/) | 场景检测 · 抽帧 · ASR（`mimo-v2.5-asr`）· VLM（`mimo-v2.5`）· 时间轴融合 · 生成创作 brief | `视频` → `scenes / asr_result / vlm_analysis / silence_periods / timeline_fusion / agent_narration_brief.md` |
+| [`video-understanding`](skills/video-understanding/) | 场景检测 · 抽帧 · 可选 ASR · 多模态视觉分析 · 时间轴融合 · 生成创作 brief | `视频 + 可选字幕` → `scenes / 可选 asr_result / vlm_analysis / silence_periods / timeline_fusion / agent_narration_brief.md` |
 | [`video-script`](skills/video-script/) | 导演 / 故事 / 画面 / 声音方案，解说写作，建议型评审与 lint；只做策划或写稿时单独调用 | `brief + 索引` → `recap_story_plan.json + visual_audio_board.json + [clip_plan.json] + narration.json` |
 | [`video-cut`](skills/video-cut/) | 片段计划 → 拼剪成片；剪辑模式先剪后配，解说按成片时间轴写 | `clip_plan.json + 视频` → `edited_source.mp4` |
-| [`video-voiceover`](skills/video-voiceover/) | 合成解说音频（MiMo `mimo-v2.5-tts` / Fish Audio `s2.1-pro-free`） | `narration.json` → `tts_segments/ + tts_meta.json` |
+| [`video-voiceover`](skills/video-voiceover/) | 合成缅甸语解说音频（默认 Edge TTS，可选其他 TTS provider） | `narration.json` → `tts_segments/ + tts_meta.json` |
 | [`video-assemble`](skills/video-assemble/) | 混音 · 压低原声 · 渲染字幕 · 多轨时间线 · 可选导出剪映 | `视频 + tts_meta` → `recap_<名>.mp4 + subtitles.srt/.ass + timeline.json` |
 
 成片固定输出为 `recap_<名>.mp4`，同时产出 `subtitles.srt/.ass`；全部中间产物在 `work_dir/`，字段契约见[数据结构](skills/video-recap/references/data-schema.md)。
@@ -358,13 +359,13 @@ flowchart LR
 
 素材库只保存 JSON / Markdown 和索引，不复制原始媒体、不建数据库、不做 embedding；Agent 直接在文件系统里 `grep`。
 
-**合成前后各做一次 MiMo 质量复核，并导出剪映草稿：**
+**合成前后各做一次多模态模型质量复核，并导出剪映草稿：**
 
 ```text
-给 /path/to/video.mp4 做解说，合成前和成片后都做 MiMo 质量复核，并导出可继续编辑的剪映草稿。
+给 /path/to/video.mp4 做解说，合成前和成片后都做多模态模型质量复核，并导出可继续编辑的剪映草稿。
 ```
 
-MiMo 复核每个阶段最多一次请求，只给建议，失败也不阻断出片。
+模型复核每个阶段最多一次请求，只给建议，失败也不阻断出片。
 
 **让解说字幕贴合原片硬字幕的位置：**
 
@@ -380,7 +381,7 @@ MiMo 复核每个阶段最多一次请求，只给建议，失败也不阻断出
 用 /path/to/voice-ref.wav 的音色给 /path/to/video.mp4 做解说；我已获得音色所有者授权。
 ```
 
-参考音频会发送给 MiMo 用于合成，只在获得音色所有者授权时使用。
+参考音频会发送给所选的音色克隆 TTS 服务，只在获得音色所有者授权时使用。
 
 **英语视频译成中文并保留原说话人的声音：**
 

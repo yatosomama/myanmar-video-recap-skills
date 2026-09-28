@@ -10,6 +10,7 @@ from pathlib import Path
 # ── 配置 ──────────────────────────────────────────────────────────────
 
 DEFAULT_MIMO_API_URL = "https://api.xiaomimimo.com/v1"
+DEFAULT_MULTIMODAL_API_URL = "https://api.openai.com/v1"
 DEFAULT_MIMO_TOKEN_PLAN_CLUSTER = "cn"
 MIMO_TOKEN_PLAN_API_URLS = {
     "cn": "https://token-plan-cn.xiaomimimo.com/v1",
@@ -83,15 +84,22 @@ def load_json(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-# Single MiMo credential powers ASR + VLM + TTS. Per-capability overrides
-# (MIMO_VIDEO_API_KEY / MIMO_TTS_API_KEY / MIMO_ASR_API_KEY and their *_API_URL forms)
-# are optional and fall back to MIMO_API_KEY / MIMO_API_URL. Token-Plan keys (tp-*) auto-
-# route to the Token-Plan cluster base URL; pay-as-you-go keys use api.xiaomimimo.com.
-_mimo_api_key = os.environ.get("MIMO_API_KEY", "")
-_mimo_video_api_key = os.environ.get("MIMO_VIDEO_API_KEY", "") or _mimo_api_key
-_mimo_tts_api_key = os.environ.get("MIMO_TTS_API_KEY", "") or _mimo_api_key
-_mimo_asr_api_key = os.environ.get("MIMO_ASR_API_KEY", "") or _mimo_api_key
-_raw_api_url = os.environ.get("MIMO_API_URL") or default_mimo_api_url(is_mimo_token_plan_key(_mimo_api_key))
+_legacy_mimo_api_key = os.environ.get("MIMO_API_KEY", "")
+_multimodal_api_key = os.environ.get("MULTIMODAL_API_KEY", "")
+_multimodal_api_url = os.environ.get("MULTIMODAL_API_URL", "")
+_multimodal_model = os.environ.get("MULTIMODAL_MODEL", "")
+_generic_multimodal = bool(_multimodal_api_key or _multimodal_api_url or _multimodal_model)
+_api_provider = "openai-compatible" if _generic_multimodal else "mimo"
+_mimo_api_key = _multimodal_api_key or _legacy_mimo_api_key
+# Dedicated ASR/TTS and video-URL endpoints keep their legacy provider credentials.
+_mimo_video_api_key = os.environ.get("MIMO_VIDEO_API_KEY", "") or _legacy_mimo_api_key
+_mimo_tts_api_key = os.environ.get("MIMO_TTS_API_KEY", "") or _legacy_mimo_api_key
+_mimo_asr_api_key = os.environ.get("MIMO_ASR_API_KEY", "") or _legacy_mimo_api_key
+_raw_api_url = (
+    _multimodal_api_url or DEFAULT_MULTIMODAL_API_URL
+    if _generic_multimodal
+    else os.environ.get("MIMO_API_URL") or default_mimo_api_url(is_mimo_token_plan_key(_legacy_mimo_api_key))
+)
 _raw_mimo_video_api_url = (
     os.environ.get("MIMO_VIDEO_API_URL")
     or os.environ.get("MIMO_API_URL")
@@ -109,22 +117,27 @@ _raw_mimo_asr_api_url = (
 )
 
 CONFIG = {
-    "api_provider": "mimo",
+    "api_provider": _api_provider,
     "api_url": normalize_api_url(_raw_api_url),
-    "api_url_source": "env" if os.environ.get("MIMO_API_URL") else "default",
+    "api_url_source": "env" if (_multimodal_api_url or os.environ.get("MIMO_API_URL")) else "default",
     "api_key": _mimo_api_key,
-    "api_env_var": "MIMO_API_KEY",
+    "api_env_var": "MULTIMODAL_API_KEY" if _generic_multimodal else "MIMO_API_KEY",
+    "multimodal_api_configured": bool(
+        (_multimodal_api_url or _multimodal_api_key) and _multimodal_model
+    ) if _generic_multimodal else bool(_legacy_mimo_api_key),
     # Read through a COPY of CONFIG by qc.mimo_evidence._effective_config /
     # safe_mimo_config, which is why neither a `CONFIG.get(...)` grep nor live-dict
     # instrumentation sees them. They drive the QC model fallback chain and the
     # provenance recorded in the QC report.
-    "mimo_qc_model": os.environ.get("MIMO_QC_MODEL") or os.environ.get("MIMO_VIDEO_MODEL")
-    or os.environ.get("MIMO_MODEL", DEFAULT_MIMO_MODEL),
-    "mimo_qc_model_source": "env" if os.environ.get("MIMO_QC_MODEL") else "fallback",
-    "mimo_model": os.environ.get("MIMO_MODEL", DEFAULT_MIMO_MODEL),
-    "mimo_model_source": "env" if os.environ.get("MIMO_MODEL") else "default",
+    "mimo_qc_model": os.environ.get("MIMO_QC_MODEL") or _multimodal_model or os.environ.get("MIMO_VIDEO_MODEL")
+    or os.environ.get("MIMO_MODEL", "" if _generic_multimodal else DEFAULT_MIMO_MODEL),
+    "mimo_qc_model_source": "env" if (
+        os.environ.get("MIMO_QC_MODEL") or _multimodal_model or os.environ.get("MIMO_VIDEO_MODEL")
+    ) else "fallback",
+    "mimo_model": _multimodal_model or os.environ.get("MIMO_MODEL", "" if _generic_multimodal else DEFAULT_MIMO_MODEL),
+    "mimo_model_source": "env" if (_multimodal_model or os.environ.get("MIMO_MODEL")) else "default",
     "mimo_api_url": normalize_api_url(_raw_api_url),
-    "mimo_api_url_source": "env" if os.environ.get("MIMO_API_URL") else "default",
+    "mimo_api_url_source": "env" if (_multimodal_api_url or os.environ.get("MIMO_API_URL")) else "default",
     "mimo_video_api_url_source": "env" if (
         os.environ.get("MIMO_VIDEO_API_URL") or os.environ.get("MIMO_API_URL")
     ) else "default",
@@ -150,8 +163,8 @@ CONFIG = {
     "mimo_video_model_source": "env" if (
         os.environ.get("MIMO_VIDEO_MODEL") or os.environ.get("MIMO_MODEL")
     ) else "default",
-    "vlm_model": os.environ.get("MIMO_MODEL", DEFAULT_MIMO_MODEL),
-    "vlm_model_source": "env" if os.environ.get("MIMO_MODEL") else "default",
+    "vlm_model": _multimodal_model or os.environ.get("MIMO_MODEL", "" if _generic_multimodal else DEFAULT_MIMO_MODEL),
+    "vlm_model_source": "env" if (_multimodal_model or os.environ.get("MIMO_MODEL")) else "default",
     "mimo_asr_model": os.environ.get("MIMO_ASR_MODEL", DEFAULT_MIMO_ASR_MODEL),
     "mimo_asr_language": os.environ.get("MIMO_ASR_LANGUAGE", "auto"),  # auto | zh | en
     "mimo_tts_model": os.environ.get("MIMO_TTS_MODEL", DEFAULT_MIMO_TTS_MODEL),
@@ -177,7 +190,7 @@ class MiMoQCRequestError(RuntimeError):
 
 
 def mimo_qc_api_call(payload, *, config=None, timeout=60):
-    """Send exactly one OpenAI-compatible MiMo request for one QC stage.
+    """Send exactly one OpenAI-compatible multimodal request for one QC stage.
 
     Deliberately no retries: the QC feature is advisory, and the orchestrator's
     one-request-per-stage contract is more important than hiding 429/timeout
@@ -186,20 +199,30 @@ def mimo_qc_api_call(payload, *, config=None, timeout=60):
     cfg = dict(CONFIG)
     if config:
         cfg.update(config)
-    api_key = cfg.get("mimo_video_api_key") or cfg.get("mimo_api_key") or cfg.get("api_key")
-    if not api_key:
+    provider = cfg.get("api_provider", "mimo")
+    api_key = (
+        cfg.get("api_key") or cfg.get("mimo_api_key")
+        if provider != "mimo"
+        else cfg.get("mimo_video_api_key") or cfg.get("mimo_api_key") or cfg.get("api_key")
+    )
+    api_url = cfg.get("api_url") if provider != "mimo" else None
+    if not api_key and (provider == "mimo" or not cfg.get("multimodal_api_configured")):
         raise MiMoQCRequestError("missing_key")
     endpoint = normalize_api_url(
-        cfg.get("mimo_video_api_url") or cfg.get("mimo_api_url") or cfg.get("api_url")
+        api_url or cfg.get("mimo_video_api_url") or cfg.get("mimo_api_url") or cfg.get("api_url")
     )
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "video-recap/multimodal-qc",
+    }
+    if api_key:
+        headers["Authorization" if provider != "mimo" else "api-key"] = (
+            f"Bearer {api_key}" if provider != "mimo" else api_key
+        )
     request = urllib.request.Request(
         endpoint,
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "User-Agent": "video-recap/mimo-qc",
-            "api-key": api_key,
-        },
+        headers=headers,
         method="POST",
     )
     try:

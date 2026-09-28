@@ -28,7 +28,7 @@
   <img alt="Skills 6" src="https://img.shields.io/badge/Skills-6-081431?style=flat-square">
   <a href="https://www.python.org/"><img alt="Python 3.10%2B" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white"></a>
   <a href="https://github.com/zenstory-ai/video-recap-skills/actions/workflows/skill-validate.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/zenstory-ai/video-recap-skills/skill-validate.yml?style=flat-square&label=CI"></a>
-  <a href="https://platform.xiaomimimo.com"><img alt="AI Xiaomi%20MiMo" src="https://img.shields.io/badge/AI-Xiaomi%20MiMo-34A853?style=flat-square"></a>
+  <img alt="OpenAI-compatible multimodal models" src="https://img.shields.io/badge/AI-Multimodal%20models-34A853?style=flat-square">
   <a href="./LICENSE"><img alt="License MIT" src="https://img.shields.io/badge/License-MIT-1F6FEB?style=flat-square"></a>
 </p>
 
@@ -44,24 +44,25 @@ The 59-second landscape recap above, *Guohuo (这一秒过火)*, is the final de
 
 Six skills install into Claude Code, Codex CLI, OpenCode, or OpenClaw. You give the video paths and the recap you want in plain language; the agent understands picture and dialogue, decides the story and audiovisual plan, cuts, writes, voices, mixes, and subtitles. Supported inputs: `.mp4 / .mov / .mkv / .webm`.
 
-- **Burmese TTS needs no API key by default.** ASR and VLM still use [Xiaomi MiMo](https://platform.xiaomimimo.com); Burmese narration uses Edge TTS (install with `python -m pip install edge-tts` and connect to the network). No GPU or local model download is needed.
+- **The vision model is not locked to one brand.** Scene understanding uses a configurable multimodal model; any service with OpenAI-compatible Chat Completions image input can be used, including local or hosted models. Burmese narration defaults to Edge TTS (install with `python -m pip install edge-tts` and connect to the network). No GPU or local model download is needed.
 - **The editorial decision comes before the sound allocation.** The agent compares edit hypotheses first, writes the viewer promise, POV, dramatic question, and change-based beats into `recap_story_plan.json`, then assigns each beat a picture job and an audio owner: narration is voiced as a block only when it has a defined job, and strong dialogue, action sound, or silence may own an entire beat.
 - **Cut first, narrate second, so the timeline is aligned by construction.** Cut mode renders the shortened video first and writes narration against that output timeline; feed several videos at once and pick ranges by `source_id` to cut one story spine; each video's analysis is saved to a filesystem material library for reuse.
 - **Keep editing after the render.** The multi-track `timeline.json` exports to a JianYing draft with editable source clips, narration, BGM, subtitles, and image overlays; drop in an accurate subtitle file and it becomes the preferred source for original-dialogue captions.
-- **Every step leaves a record you can check.** Narration lint, assembly QC, delivery QC, and the revision log are machine-readable files; the optional MiMo adviser only suggests, and a missing key, rate limit, or timeout never blocks the render.
+- **Every step leaves a record you can check.** Narration lint, assembly QC, delivery QC, and the revision log are machine-readable files; the optional multimodal reviewer only suggests, and missing configuration, rate limits, or timeouts never block the render.
 
 ## Install
 
-Prerequisites: Python 3.10 or newer, `ffmpeg` with libass on `PATH` (subtitles are burned in by default), the `edge-tts` command, and one [Xiaomi MiMo](https://platform.xiaomimimo.com) API key for video understanding.
+Prerequisites: Python 3.10 or newer, `ffmpeg` with libass on `PATH` (subtitles are burned in by default), the `edge-tts` command, and a multimodal model API that accepts OpenAI-compatible image input.
 
 ```bash
 brew install ffmpeg                        # macOS; apt on Debian/Ubuntu, choco / scoop / winget on Windows
 python -m pip install edge-tts
-export MIMO_API_KEY=your-mimo-key          # Windows PowerShell: $env:MIMO_API_KEY="your-mimo-key"
-export MIMO_TOKEN_PLAN_CLUSTER=cn          # tp-* Token Plan keys only: cn | sgp | ams
+export MULTIMODAL_API_URL=https://api.openai.com/v1  # use your provider's OpenAI-compatible endpoint
+export MULTIMODAL_API_KEY=your-api-key               # optional for local unauthenticated services
+export MULTIMODAL_MODEL=your-vision-model            # model ID with image input support
 ```
 
-MiMo needs no subscription; `sk-*` keys bill pay-as-you-go. One complete video measured for this project cost about CNY 1.3, varying with length and request volume.
+Provider, deployment, and billing depend on your configured service. Confirm that the model accepts `image_url` content in Chat Completions. When Chinese subtitles are supplied, ASR can be skipped; without subtitles, configure an ASR provider to analyze original dialogue.
 
 Inside Claude Code:
 
@@ -116,14 +117,14 @@ export FISH_API_KEY=your-fish-key
 export FISH_TTS_REFERENCE_ID=your-voice-model-id  # optional; the built-in "娱乐扒妹" narration voice is the default
 ```
 
-The default model is `s2.1-pro-free` with the built-in "娱乐扒妹" voice (reference ID `5653cea4ac83480aaf2bf45406556185`); billing follows Fish Audio's own terms. ASR and VLM still use MiMo, and local reference-voice cloning (`--voice-ref`) is available on the MiMo path only.
+The default model is `s2.1-pro-free` with the built-in "娱乐扒妹" voice (reference ID `5653cea4ac83480aaf2bf45406556185`); billing follows Fish Audio's own terms. Reference-voice cloning (`--voice-ref`) is available only through a TTS provider that supports cloning and is independent of the vision model.
 
 </details>
 
 Once installed, ask the agent to check the environment:
 
 ```text
-Check the video-recap environment and tell me whether Python, ffmpeg/libass, and MiMo are ready.
+Check the video-recap environment and tell me whether Python, ffmpeg/libass, and the multimodal model endpoint are ready.
 ```
 
 > Changes are in [CHANGELOG.md](CHANGELOG.md) and [Releases](https://github.com/zenstory-ai/video-recap-skills/releases). The repository moved from `worldwonderer/video-recap-skills` to `zenstory-ai/video-recap-skills`; if you installed from the old address, point at the new one.
@@ -335,7 +336,7 @@ The agent handles understanding, story and audiovisual planning, cutting, script
 flowchart LR
     video(["Video"]) --> understand["① Understand<br/>scenes · ASR · VLM"]
     research["Story research · optional"] -.-> understand
-    understand --> script["② Direct · Edit · Script<br/>agent"] --> voiceover["③ Voiceover<br/>MiMo / Fish Audio"] --> assemble["④ Assemble<br/>mix · subtitles"] --> output(["Recap"])
+    understand --> script["② Direct · Edit · Script<br/>agent"] --> voiceover["③ Voiceover<br/>Edge TTS / optional TTS provider"] --> assemble["④ Assemble<br/>mix · subtitles"] --> output(["Recap"])
     understand -. cut mode · cut first .-> cut["Cut<br/>render first"] -.-> script
     classDef io fill:#4f86c6,stroke:#3a6298,color:#fff;
     classDef stage fill:#eef6ff,stroke:#4f86c6,color:#1f2937;
@@ -350,10 +351,10 @@ The six skills hand off through the JSON / MP4 artifacts in `work_dir`:
 | Skill | Responsibility | In → Out |
 |---|---|---|
 | [`video-recap`](skills/video-recap/) | Orchestrator and environment doctor; the one to use for everyday end-to-end production | `video` → `recap_<name>.mp4` |
-| [`video-understanding`](skills/video-understanding/) | Scene detection · frame extraction · ASR (`mimo-v2.5-asr`) · VLM (`mimo-v2.5`) · timeline fusion · creative brief | `video` → `scenes / asr_result / vlm_analysis / silence_periods / timeline_fusion / agent_narration_brief.md` |
+| [`video-understanding`](skills/video-understanding/) | Scene detection · frame extraction · optional ASR · multimodal vision · timeline fusion · creative brief | `video + optional subtitles` → `scenes / optional asr_result / vlm_analysis / silence_periods / timeline_fusion / agent_narration_brief.md` |
 | [`video-script`](skills/video-script/) | Directing / story / picture / sound plan, narration writing, advisory review and lint; call it alone for planning or writing only | `brief + index` → `recap_story_plan.json + visual_audio_board.json + [clip_plan.json] + narration.json` |
 | [`video-cut`](skills/video-cut/) | Clip plan → rendered cut; cut first, narrate second on the output timeline | `clip_plan.json + video` → `edited_source.mp4` |
-| [`video-voiceover`](skills/video-voiceover/) | Synthesise narration audio (MiMo `mimo-v2.5-tts` / Fish Audio `s2.1-pro-free`) | `narration.json` → `tts_segments/ + tts_meta.json` |
+| [`video-voiceover`](skills/video-voiceover/) | Synthesize Burmese narration audio (Edge TTS by default; other TTS providers are optional) | `narration.json` → `tts_segments/ + tts_meta.json` |
 | [`video-assemble`](skills/video-assemble/) | Mix · duck original audio · render subtitles · multi-track timeline · optional JianYing export | `video + tts_meta` → `recap_<name>.mp4 + subtitles.srt/.ass + timeline.json` |
 
 The recap is always written to `recap_<name>.mp4` alongside `subtitles.srt/.ass`; all intermediate artifacts live in `work_dir/`, with the field contracts in the [data schema](skills/video-recap/references/data-schema.md).
@@ -368,13 +369,13 @@ Analyze /path/to/ep1.mp4 and save reusable understanding artifacts under /path/t
 
 The library holds JSON, Markdown, and an index only; it copies no media, builds no database, and uses no embeddings. The agent simply `grep`s the filesystem.
 
-**Run an advisory MiMo review before and after assembly, and export a JianYing draft:**
+**Run an advisory multimodal model review before and after assembly, and export a JianYing draft:**
 
 ```text
-Make a recap of /path/to/video.mp4, run MiMo quality review before assembly and after rendering, and export an editable JianYing draft.
+Make a recap of /path/to/video.mp4, run multimodal model quality review before assembly and after rendering, and export an editable JianYing draft.
 ```
 
-MiMo review makes at most one request per stage, only suggests, and never blocks the render if it fails.
+Model review makes at most one request per stage, only suggests, and never blocks the render if it fails.
 
 **Align recap subtitles with the source's burned-in subtitle band:**
 
@@ -390,7 +391,7 @@ The preview is stored under `.subtitle_measure/`; it currently requires square-p
 Use the voice from /path/to/voice-ref.wav for the recap of /path/to/video.mp4. I have the voice owner's authorization.
 ```
 
-The reference audio is sent to MiMo for synthesis; use it only with the voice owner's authorisation.
+The reference audio is sent to the selected voice-cloning TTS service; use it only with the voice owner's authorisation.
 
 **Dub an English video into Chinese while keeping the speaker's voice:**
 

@@ -10,12 +10,14 @@ Defaults below are bundle-level defaults unless a note scopes them to a specific
 
 | Concern | Env var / flag | Default | Notes |
 |---|---|---|---|
-| MiMo API key | `MIMO_API_KEY` | — | **required for the default video-understanding pipeline**; one key drives ASR + VLM. Burmese narration defaults to Edge TTS. `tp-*` Token-Plan keys auto-route to the cluster base URL; `sk-*` keys support pay-as-you-go without a subscription |
-| Token-Plan cluster | `MIMO_TOKEN_PLAN_CLUSTER` | `cn` | `cn` / `sgp` / `ams` (only for `tp-*` keys) |
-| VLM / chat model | `MIMO_MODEL` | `mimo-v2.5` | frame VLM + reviewer + consolidate |
-| ASR model | `MIMO_ASR_MODEL` | `mimo-v2.5-asr` | speech-to-text |
-| ASR language | `MIMO_ASR_LANGUAGE` | `auto` | `auto` / `zh` / `en` |
-| ASR window | `ASR_SEGMENT_SECONDS` | `15` | smaller → finer dialogue timestamps (stays under MiMo's 10MB base64 cap) |
+| Multimodal endpoint | `MULTIMODAL_API_URL` | `https://api.openai.com/v1` when generic settings are used | OpenAI-compatible Chat Completions endpoint; must accept image `image_url` content. Local endpoints may omit authentication |
+| Multimodal API key | `MULTIMODAL_API_KEY` | — | optional for local unauthenticated endpoints; use the key format expected by the provider |
+| Multimodal vision model | `MULTIMODAL_MODEL` | — | required when using generic settings; supply the model ID enabled at the endpoint |
+| Legacy API compatibility | `MIMO_API_KEY` / `MIMO_API_URL` / `MIMO_MODEL` | — | retained as a fallback for existing configurations; generic variables take precedence for frame VLM requests |
+| Legacy Token-Plan cluster | `MIMO_TOKEN_PLAN_CLUSTER` | `cn` | only used by legacy Token-Plan credentials: `cn` / `sgp` / `ams` |
+| ASR model | `MIMO_ASR_MODEL` | `mimo-v2.5-asr` | legacy ASR provider only; when supplied subtitles are authoritative, pass `--skip-asr` |
+| ASR language | `MIMO_ASR_LANGUAGE` | `auto` | legacy ASR provider only: `auto` / `zh` / `en` |
+| ASR window | `ASR_SEGMENT_SECONDS` | `15` | smaller → finer dialogue timestamps; this setting applies to the configured legacy ASR adapter |
 | TTS provider | `TTS_PROVIDER` / `--tts-provider {edge-tts,auto,mimo-tts,fish-audio,index-tts}` | `edge-tts` | Burmese Edge TTS voice `my-MM-ThihaNeural`, no API key; requires network. `EDGE_TTS_VOICE=my-MM-NilarNeural` selects the female voice. `auto` preserves the original credential-based provider selection |
 | MiMo TTS model | `MIMO_TTS_MODEL` | `mimo-v2.5-tts` | MiMo provider only |
 | MiMo voice | `MIMO_TTS_VOICE` / `--mimo-tts-voice` | `冰糖` | |
@@ -26,8 +28,8 @@ Defaults below are bundle-level defaults unless a note scopes them to a specific
 | Fish Audio endpoint | `FISH_TTS_API_URL` | `https://api.fish.audio/v1/tts` | returns WAV directly to the existing voiceover pipeline |
 | Self-hosted TTS | `INDEX_TTS_ENDPOINT` / `INDEX_TTS_VOICE` | — | explicit `--tts-provider index-tts` only; the endpoint is never written to disk, and segment `emotion`/style is rejected |
 | TTS transport | `TTS_TIMEOUT` / `TTS_WORKERS` / `TTS_RETRIES` | `300` / `4` / `3` | request timeout, parallel segments, and per-segment retries for all providers |
-| Advisory MiMo QC | `MIMO_QC` / `--mimo-qc {off,pre-assemble,post-render,both}` | `off` | optional subjective review at the selected stage(s), one request per stage. Always fail-open: results only point the agent/user to `mimo_qc.json`, never block or auto-repair |
-| MiMo QC refresh/model | `MIMO_QC_REFRESH` / `--mimo-qc-refresh`; `MIMO_QC_MODEL` | cache on / VLM fallback | the reuse check compares evidence file sizes/mtimes, model and prompt, never absolute paths. Post-render temporarily samples at most 6 JPEGs (≤768px); base64 is never persisted. The standalone adapter requires explicit `mimo_qc.py --live` for network access |
+| Advisory model QC | `MIMO_QC` / `--mimo-qc {off,pre-assemble,post-render,both}` | `off` | optional subjective multimodal review at selected stage(s), one request per stage. The old flag and artifact names are kept for compatibility. Always fail-open: never blocks or auto-repairs |
+| Model QC refresh/model | `MIMO_QC_REFRESH` / `--mimo-qc-refresh`; `MIMO_QC_MODEL` | cache on / configured vision model | the reuse check compares evidence file sizes/mtimes, model and prompt, never absolute paths. Post-render temporarily samples at most 6 JPEGs (≤768px); base64 is never persisted. The standalone adapter requires explicit `mimo_qc.py --live` for network access |
 | Narration block coverage | `NARRATION_COVERAGE_TARGET` / `NARRATION_BLOCK_SECONDS` | `0.7` / `9.0` | current block-recap density controls |
 | Narration speed | `NARRATION_SPEED` | `1.27` | global atempo on Burmese voiceover; set `1.0` when Edge TTS already uses a faster native rate (e.g. `+25%`) to avoid compounding speed; also set `1.0` for long-form/documentary |
 | Narration authored start | `NARRATION_DELAY_SECONDS` | `0` | the renderer uses the Agent-authored `start` exactly. Set a non-zero value only for legacy drafts; hidden delay can move a validated sentence-boundary entry back into source speech |

@@ -21,7 +21,7 @@ description: >
 
 1. **场景检测**：写 `scenes.json`，包含切点、时长和废片段过滤结果。
 2. **抽帧**：为视觉分析提取代表帧。
-3. **ASR**：通过 `mimo-v2.5-asr` 写粗分段对白 `asr_result.json`，并写
+3. **ASR（可选）**：通过已配置的 ASR provider 写粗分段对白 `asr_result.json`，并写
    `asr_timing_evidence.json` 说明可用性、有限时间精度与文本修正来源。
 4. **静音检测**：写 `silence_periods.json`，标注安静窗口与 `has_speech`。
 5. **VLM 观察**：写 `vlm_analysis.json`，包含场景描述、深层分析和 `frame_facts`。
@@ -33,10 +33,12 @@ description: >
 
 ```bash
 # ffmpeg: brew install ffmpeg | apt install ffmpeg | choco install ffmpeg
-export MIMO_API_KEY=***
+export MULTIMODAL_API_URL=https://api.openai.com/v1
+export MULTIMODAL_API_KEY=***  # 本地免密服务可省略
+export MULTIMODAL_MODEL=your-vision-model
 ```
 
-ASR 使用 `mimo-v2.5-asr`；VLM 使用 `mimo-v2.5`。`--skip-asr` 可跳过对白转写，但完整理解仍需要 `MIMO_API_KEY` 运行 VLM。`--mimo-video-overview` 可开启按场景块的视频概览。
+逐场景 VLM 使用可配置的多模态视觉模型，需支持 OpenAI-compatible Chat Completions `image_url` 输入。旧 `MIMO_API_KEY` / `MIMO_API_URL` 配置仍兼容。提供可信字幕时用 `--skip-asr` 跳过转写；需要识别无字幕对白时，另行配置 ASR provider。`--mimo-video-overview` 是保留旧名的专用整段视频 API 选项。
 
 若 `work_dir/background_research.json` 存在，本技能会把剧情梗概和角色名折入 VLM 上下文；`--context` 可补充一条简短提示。
 
@@ -73,5 +75,5 @@ python3 scripts/understand.py <video> --work-dir <work_dir> \
 
 - 不写解说词，也不做解说评分；只负责生成理解索引与创作简报。
 - 不编造信号无法支持的剧情；当 ASR / VLM 过薄时输出素材警告。
-- MiMo ASR 的 `start/end` 是固定分片形成的**粗窗口**，不是词级对齐；空文本只表示原因未知，
+- ASR 的 `start/end` 是固定分片形成的**粗窗口**，不是词级对齐；空文本只表示原因未知，
   不能当作已证实静音。`asr_timing_evidence.json` 的状态字段见 `references/data-schema.md`。

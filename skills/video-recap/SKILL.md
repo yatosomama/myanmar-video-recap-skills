@@ -64,7 +64,7 @@ python3 scripts/recap.py picture.mp4 --edit-mode full --work-dir NEW_WORK \
 ```
 
 三个 JSON 参数必须同时出现。该入口只接受单视频、full、narration、音轨 0、新工作目录和未存在的
-交付文件；不运行理解、写稿、解说评审、TTS、cut、MiMo QC 或剪映导出。语义与媒体形状仍由
+交付文件；不运行理解、写稿、解说评审、TTS、cut、模型 QC 或剪映导出。语义与媒体形状仍由
 video-assemble 严格验证，recap 只核对子技能绑定记录引用的是同一批采用文件与母版路径，不把调用方
 采用的声音或混音声明成自动创作或发布批准。详见 `references/audio-routing.md`。
 
@@ -87,26 +87,25 @@ video-assemble 严格验证，recap 只核对子技能绑定记录引用的是�
 
 ```bash
 # ffmpeg: brew install ffmpeg | apt install ffmpeg | choco install ffmpeg
-export MIMO_API_KEY=***
+export MULTIMODAL_API_URL=https://api.openai.com/v1
+export MULTIMODAL_API_KEY=***  # 本地免密服务可省略
+export MULTIMODAL_MODEL=your-vision-model
 ```
 
-MiMo key 驱动：
+逐场景视觉分析使用可配置的多模态模型，通过 OpenAI-compatible Chat Completions `image_url` 发送抽取帧；需填写服务端地址、模型 ID 与凭证。模型原生接口不兼容此格式时，需使用服务商的兼容 endpoint 或配置适配层。用户提供可读字幕时优先依据字幕理解剧情，并传递 `--skip-asr` 跳过语音转写；无字幕且要理解对白时，另行配置 ASR provider。可选整段视频概览仍只支持专用视频 API 适配器。`--doctor` 只做离线配置检查。
 
-- ASR：`mimo-v2.5-asr`
-- VLM：`mimo-v2.5`
-
-默认 `--tts-provider edge-tts`，不需 API key，使用缅甸语男声 `my-MM-ThihaNeural`；可用环境变量 `EDGE_TTS_VOICE=my-MM-NilarNeural` 切换为女声，`TTS_PROVIDER` / `--tts-provider` 可显式选择其他 provider。Edge TTS 需要联网。ASR/VLM 仍使用 MiMo；若用户提供了可读字幕，应优先以字幕理解剧情，不要把自动 ASR 当作剧情事实来源。`--doctor` 只做离线配置检查。
+默认 `--tts-provider edge-tts`，不需 API key，使用缅甸语男声 `my-MM-ThihaNeural`；可用环境变量 `EDGE_TTS_VOICE=my-MM-NilarNeural` 切换为女声，`TTS_PROVIDER` / `--tts-provider` 可显式选择其他 provider。Edge TTS 需要联网。
 
 本仓库默认交付语言是缅甸语。编排、写稿、字幕和旁白要求见 `../video-script/references/myanmar-localization.md`；除非用户明确指定另一种目标语言，不得回退成中文解说。
 
-`tp-*` Token Plan 密钥默认使用中国区集群，可用 `MIMO_TOKEN_PLAN_CLUSTER` 覆盖。
+旧版 `MIMO_API_KEY` / `MIMO_API_URL` 仍作为兼容回退；旧 Token-Plan 密钥可用 `MIMO_TOKEN_PLAN_CLUSTER` 指定集群。
 
 可选能力：
 
-- `--mimo-video-overview`：按场景块补充 MiMo 视频理解。
+- `--mimo-video-overview`：按场景块补充专用视频 API 理解；选项名为旧版兼容名称。
 - `--mimo-qc pre-assemble|post-render|both`：在合成前、成片后或两个阶段给出建议型复核。
 
-MiMo QC 默认关闭；每个选定阶段最多请求一次，写入 `mimo_qc.json`。任何凭证缺失、限流、超时、格式错误或采样失败都只记录状态，不阻断流程。可覆盖配置见 `references/config-playbook.md`，QC 报告的最小契约见 `references/shift-left-qc-schema.md`。
+模型 QC 默认关闭；每个选定阶段最多请求一次，写入兼容名称 `mimo_qc.json`。任何配置缺失、限流、超时、格式错误或采样失败都只记录状态，不阻断流程。可覆盖配置见 `references/config-playbook.md`，QC 报告的最小契约见 `references/shift-left-qc-schema.md`。
 
 下面的 `scripts/...` 均相对于本技能目录。若执行器从仓库根目录启动，请给脚本路径加上本技能的绝对目录。脚本启动后会自行定位兄弟技能和资源。
 
@@ -168,7 +167,7 @@ python3 scripts/recap.py <video> --work-dir <work_dir>  # 可追加 --edit-mode 
 
 流程会校验当前阶段的硬输入（`clip_plan.json` / `narration.json`）；两份创作计划仍是 Agent 与建议型评审使用的工作记录，不是渲染门禁。cut 模式随后生成 `edited_source.mp4`，再合成旁白并输出 `recap_<name>.mp4`。
 
-若需要建议型 MiMo 复核：
+若需要建议型多模态模型复核：
 
 ```bash
 python3 scripts/recap.py <video> --work-dir <work_dir> --mimo-qc both
@@ -275,5 +274,5 @@ python3 scripts/dashboard_server.py --root <目录> [--port 0] [--open]
 ## 8. 能力边界
 
 - 语义评审默认建议型、失败开放；只有调用方显式启用严格解说评审时，事实矛盾、残句或评审不可用才会在 TTS 前阻断。确定性校验阶段始终负责硬校验。
-- MiMo QC 不能阻断、自动修复或改变退出状态，只提供定位建议。
+- 多模态模型 QC 不能阻断、自动修复或改变退出状态，只提供定位建议。
 - 宣发标题、花字或外部文案回填见 `video-script` 的 references/promotional-copy.md。

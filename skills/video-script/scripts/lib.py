@@ -14,6 +14,7 @@ from email.utils import parsedate_to_datetime
 # ── 配置 ──────────────────────────────────────────────────────────────
 
 DEFAULT_MIMO_API_URL = "https://api.xiaomimimo.com/v1"
+DEFAULT_MULTIMODAL_API_URL = "https://api.openai.com/v1"
 DEFAULT_MIMO_TOKEN_PLAN_CLUSTER = "cn"
 MIMO_TOKEN_PLAN_API_URLS = {
     "cn": "https://token-plan-cn.xiaomimimo.com/v1",
@@ -91,18 +92,29 @@ def env_float(name, default, *, minimum=None):
     return _env_number(name, default, float, minimum)
 
 
-# Single MiMo credential powers ASR + VLM + TTS. Per-capability overrides
-# (MIMO_VIDEO_API_KEY / MIMO_TTS_API_KEY / MIMO_ASR_API_KEY and their *_API_URL forms)
-# are optional and fall back to MIMO_API_KEY / MIMO_API_URL. Token-Plan keys (tp-*) auto-
-# route to the Token-Plan cluster base URL; pay-as-you-go keys use api.xiaomimimo.com.
-_mimo_api_key = os.environ.get("MIMO_API_KEY", "")
-_raw_api_url = os.environ.get("MIMO_API_URL") or default_mimo_api_url(is_mimo_token_plan_key(_mimo_api_key))
+_legacy_mimo_api_key = os.environ.get("MIMO_API_KEY", "")
+_multimodal_api_key = os.environ.get("MULTIMODAL_API_KEY", "")
+_multimodal_api_url = os.environ.get("MULTIMODAL_API_URL", "")
+_multimodal_model = os.environ.get("MULTIMODAL_MODEL", "")
+_generic_multimodal = bool(_multimodal_api_key or _multimodal_api_url or _multimodal_model)
+_api_provider = "openai-compatible" if _generic_multimodal else "mimo"
+_mimo_api_key = _multimodal_api_key or _legacy_mimo_api_key
+_raw_api_url = (
+    _multimodal_api_url or DEFAULT_MULTIMODAL_API_URL
+    if _generic_multimodal
+    else os.environ.get("MIMO_API_URL") or default_mimo_api_url(is_mimo_token_plan_key(_legacy_mimo_api_key))
+)
 
 CONFIG = {
+    "api_provider": _api_provider,
     "api_url": normalize_api_url(_raw_api_url),
+    "api_url_source": "env" if (_multimodal_api_url or os.environ.get("MIMO_API_URL")) else "default",
     "api_key": _mimo_api_key,
-    "api_env_var": "MIMO_API_KEY",
-    "vlm_model": os.environ.get("MIMO_MODEL", DEFAULT_MIMO_MODEL),
+    "api_env_var": "MULTIMODAL_API_KEY" if _generic_multimodal else "MIMO_API_KEY",
+    "multimodal_api_configured": bool(
+        (_multimodal_api_url or _multimodal_api_key) and _multimodal_model
+    ) if _generic_multimodal else bool(_legacy_mimo_api_key),
+    "vlm_model": _multimodal_model or os.environ.get("MIMO_MODEL", "" if _generic_multimodal else DEFAULT_MIMO_MODEL),
     "mimo_disable_thinking": env_bool("MIMO_DISABLE_THINKING", True),
     # TTS 语速（字符/秒）。实测 mimo-tts 冰糖音色中位 ~3.9 字/秒，可用 SPEECH_RATE 覆盖
     # 生成解说时使用 speech_rate * safety_margin 作为约束
@@ -166,19 +178,27 @@ def _sanitize_api_error(value, limit=500):
     return text[:limit]
 
 def _api_headers(api_provider=None, api_url=None, api_key=None):
-    """Build MiMo auth headers (OpenAI-compatible chat/completions with an api-key header)."""
-    del api_provider, api_url  # MiMo is the only provider; signature kept for call sites
+    """Build auth headers for the configured chat-completions endpoint."""
+    del api_url
     key = CONFIG["api_key"] if api_key is None else api_key
-    return {
+    headers = {
         "Content-Type": "application/json",
         "User-Agent": "video-recap/1.0",
-        "api-key": key,
     }
+    if not key:
+        return headers
+    if (api_provider or CONFIG["api_provider"]) == "mimo":
+        headers["api-key"] = key
+    else:
+        headers["Authorization"] = f"Bearer {key}"
+    return headers
 
 def _prepare_api_payload(payload, api_provider=None, api_url=None):
-    """Normalize payload fields for MiMo's OpenAI-compatible chat/completions API."""
-    del api_provider, api_url
+    """Use standard chat-completions fields except on the legacy provider path."""
+    del api_url
     normalized = dict(payload)
+    if (api_provider or CONFIG["api_provider"]) != "mimo":
+        return normalized
     if "max_tokens" in normalized and "max_completion_tokens" not in normalized:
         normalized["max_completion_tokens"] = normalized.pop("max_tokens")
     model = normalized["model"]
@@ -199,8 +219,9 @@ def api_call(payload, max_retries=8, *, api_provider=None, api_url=None, api_key
     避免一次瞬时限流就中止整个阶段。配额窗口常以分钟计，所以 429 在没有 Retry-After 时也至少等 10s。
     """
     endpoint = normalize_api_url(api_url if api_url is not None else CONFIG["api_url"])
-    headers = _api_headers(api_provider=api_provider, api_url=endpoint, api_key=api_key)
-    data = json.dumps(_prepare_api_payload(payload, api_provider=api_provider, api_url=endpoint)).encode("utf-8")
+    provider = api_provider or CONFIG["api_provider"]
+    headers = _api_headers(api_provider=provider, api_url=endpoint, api_key=api_key)
+    data = json.dumps(_prepare_api_payload(payload, api_provider=provider, api_url=endpoint)).encode("utf-8")
 
     for attempt in range(max_retries):
         try:

@@ -71,7 +71,7 @@ def _asr_status() -> dict[str, object]:
         "mimo_asr_api_url_source": CONFIG["mimo_asr_api_url_source"],
         "mimo_asr_language": CONFIG["mimo_asr_language"],
         "mimo_asr_env_var": CONFIG["mimo_asr_env_var"],
-        "note": "ASR uses MiMo (mimo-v2.5-asr); set MIMO_API_KEY, or run with --skip-asr.",
+        "note": "ASR is optional when a trusted subtitle file is supplied; otherwise configure an ASR provider or run with --skip-asr.",
     }
 
 
@@ -139,10 +139,11 @@ def _build_capability_menu(checks: dict) -> dict[str, list[dict[str, str]]]:
     ffprobe_ready = system["ffprobe"]
     subtitles_ready = system["burn_subtitles_ready"]
     api_key_set = api["api_key_set"]
+    multimodal_ready = api["multimodal_configured"]
     asr_ready = asr["available"]
     tts_ready = tts["available"]
-    vlm_ready = api["mimo_video_configured"]
-    normal_core_ready = ffmpeg_ready and ffprobe_ready and api_key_set and vlm_ready and tts_ready
+    vlm_ready = multimodal_ready
+    normal_core_ready = ffmpeg_ready and ffprobe_ready and vlm_ready and tts_ready
 
     if ffmpeg_ready and ffprobe_ready:
         menu["ready"].append(
@@ -162,37 +163,37 @@ def _build_capability_menu(checks: dict) -> dict[str, list[dict[str, str]]]:
                 _capability("ffprobe", "Missing ffprobe", action="Install ffprobe before running media probing/export.")
             )
 
-    if api_key_set:
+    if multimodal_ready:
         menu["ready"].append(
             _capability(
-                "mimo_credentials",
-                "MiMo API key is configured",
-                detail=f"Source: {api['api_env_var']}",
+                "multimodal_endpoint",
+                "Multimodal model endpoint is configured",
+                detail=f"Model: {api['vlm_model']}",
             )
         )
     else:
         menu["blocked"].append(
             _capability(
-                "mimo_credentials",
-                "Missing MIMO_API_KEY",
-                action="Set MIMO_API_KEY for default ASR / VLM video understanding; Burmese Edge TTS does not use this key.",
+                "multimodal_endpoint",
+                "Multimodal model endpoint is not configured",
+                action="Set MULTIMODAL_API_URL, MULTIMODAL_MODEL, and MULTIMODAL_API_KEY (the key may be omitted for a local unauthenticated endpoint).",
             )
         )
 
     if vlm_ready:
         menu["ready"].append(
             _capability(
-                "mimo_vlm",
-                "MiMo VLM/video understanding is configured",
+                "multimodal_vision",
+                "Multimodal vision model is configured",
                 detail=f"Model: {api['vlm_model']}",
             )
         )
-    elif api_key_set:
+    elif not multimodal_ready:
         menu["blocked"].append(
             _capability(
-                "mimo_vlm",
-                "MiMo VLM/video understanding is not configured",
-                action="Set MIMO_VIDEO_API_KEY or the shared MIMO_API_KEY before video understanding.",
+                "multimodal_vision",
+                "Multimodal vision model is not configured",
+                action="Set MULTIMODAL_API_URL and MULTIMODAL_MODEL; use an endpoint that accepts OpenAI-compatible image_url content.",
             )
         )
 
@@ -234,16 +235,16 @@ def _build_capability_menu(checks: dict) -> dict[str, list[dict[str, str]]]:
     if asr_ready:
         menu["ready"].append(
             _capability(
-                "mimo_asr",
-                "MiMo ASR is configured",
+                "asr_provider",
+                "ASR provider is configured",
                 detail=f"Language: {asr['mimo_asr_language']}; model: {asr['mimo_asr_model']}",
             )
         )
     else:
         menu[DEGRADED_GROUP].append(
             _capability(
-                "mimo_asr",
-                "ASR is unavailable; run only with --skip-asr",
+                "asr_provider",
+                "ASR is unavailable; supply subtitles or run with --skip-asr",
                 action=asr["note"],
             )
         )
@@ -323,6 +324,7 @@ def build_report(*, tts_provider: str | None = None) -> dict[str, object]:
     ffmpeg_path = _command_path("ffmpeg") or ""
     ffprobe_path = _command_path("ffprobe") or ""
     mimo_video_configured = bool(CONFIG["mimo_video_api_key"])
+    multimodal_configured = bool(CONFIG["multimodal_api_configured"])
     mimo_tts_configured = bool(CONFIG["mimo_tts_api_key"])
     fish_tts_configured = bool(CONFIG["fish_api_key"])
     index_tts = _index_tts_status()
@@ -387,6 +389,7 @@ def build_report(*, tts_provider: str | None = None) -> dict[str, object]:
             "api_url_source": CONFIG["api_url_source"],
             "api_env_var": CONFIG["api_env_var"],
             "api_key_set": bool(CONFIG["api_key"]),
+            "multimodal_configured": multimodal_configured,
             "vlm_model": CONFIG["vlm_model"],
             "vlm_model_source": CONFIG["vlm_model_source"],
             "vlm_workers": CONFIG["vlm_workers"],
@@ -422,10 +425,10 @@ def build_report(*, tts_provider: str | None = None) -> dict[str, object]:
             failures.append("INDEX_TTS_VOICE is not set")
     if tools["ffmpeg"] and not tools["ffmpeg_subtitles_filter"]:
         warnings.append("ffmpeg lacks subtitles/libass filter; --burn-subtitles will fail")
-    if not checks["api_config"]["api_key_set"]:
-        failures.append("MIMO_API_KEY is not set; the default ASR / VLM path requires MiMo")
+    if not checks["api_config"]["multimodal_configured"]:
+        failures.append("MULTIMODAL_API_URL and MULTIMODAL_MODEL are required for frame-based video understanding")
     if not checks["asr"]["available"]:
-        warnings.append("ASR not configured (MIMO_API_KEY); pipeline can run with --skip-asr")
+        warnings.append("ASR is not configured; provide a subtitle file or run with --skip-asr")
     return {
         "ok": not failures,
         "repo_root": str(SCRIPT_DIR.parents[2]),
@@ -472,7 +475,7 @@ def _print_human(report: dict) -> None:
     print("\n[asr]")
     print(
         f"{_status_icon(asr['available'], warning=True)} "
-        f"MiMo ASR: {'configured' if asr['available'] else 'not configured'} "
+        f"ASR provider: {'configured' if asr['available'] else 'not configured'} "
         f"(key: {asr['mimo_asr_env_var']})"
     )
     print(f"✓ ASR model: {asr['mimo_asr_model']}")
