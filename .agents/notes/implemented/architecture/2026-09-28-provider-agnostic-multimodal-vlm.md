@@ -17,3 +17,7 @@
 
 - **收益**：使用 OpenAI-compatible vision endpoint 的托管或本地模型可驱动逐帧分析；旧配置继续兼容；显式中文字幕工作流可跳过 ASR。
 - **代价**：原生协议不兼容的多模态模型不能只靠模型名直接接入；用户仍需配置可访问的视觉 API。没有字幕时，ASR 仍需要支持的 ASR provider。整段视频 URL 的专用模式、TTS provider 标识和历史产物名不在本次重命名范围内。
+
+## Follow-up
+
+此笔记记录的 API 配置解决的是独立 CLI 后端。Agent 调用 skill 时改为默认使用宿主内置视觉能力，见 [Agent-native multimodal skill runtime](2026-09-28-agent-native-multimodal-skill-runtime.md)。

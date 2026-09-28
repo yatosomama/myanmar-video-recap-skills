@@ -31,20 +31,32 @@ description: >
 
 ## 3. 环境要求
 
+**由 Agent 调用本技能时，默认使用当前宿主自己的多模态视觉能力理解视频或抽取帧，不要求用户配置模型 API。** 读取并使用用户提供的中文字幕；字幕支持剧情/对白判断，但动作、人物出入和剪点必须用画面核实。只有用户要求独立 CLI/自动化运行，或宿主没有视觉能力时，才走可配置视觉 API 后端；该后端需支持 OpenAI-compatible Chat Completions `image_url` 输入，旧 `MIMO_API_KEY` / `MIMO_API_URL` 配置仍兼容。CLI 提供可信字幕时用 `--skip-asr` 跳过转写；需要识别无字幕对白时，另行配置 ASR provider。`--mimo-video-overview` 是保留旧名的专用整段视频 API 选项。
+
+### Agent-native 模式
+
+读取全部中文字幕并实际检查视频。宿主可直接读视频时按时间线观察；否则先用 ffmpeg 检测场景并抽取代表帧，再用宿主的图像理解能力逐场景观察。输出本技能 §5 所列的理解文件，字幕内容作为对白与剧情依据，画面帧作为动作/表演/人物位置依据；将“画面可见事实”和“剧情推断”分开记录。整个流程不需要 `MULTIMODAL_API_*` 或 ASR API。
+
+### 独立 CLI / 自动化模式
+
+脚本化理解才需要配置视觉 API：
+
 ```bash
 # ffmpeg: brew install ffmpeg | apt install ffmpeg | choco install ffmpeg
 export MULTIMODAL_API_URL=https://api.openai.com/v1
-export MULTIMODAL_API_KEY=***  # 本地免密服务可省略
+export MULTIMODAL_API_KEY=your-api-key  # 本地免密服务可省略
 export MULTIMODAL_MODEL=your-vision-model
 ```
 
-逐场景 VLM 使用可配置的多模态视觉模型，需支持 OpenAI-compatible Chat Completions `image_url` 输入。旧 `MIMO_API_KEY` / `MIMO_API_URL` 配置仍兼容。提供可信字幕时用 `--skip-asr` 跳过转写；需要识别无字幕对白时，另行配置 ASR provider。`--mimo-video-overview` 是保留旧名的专用整段视频 API 选项。
+该 endpoint 需支持 OpenAI-compatible Chat Completions `image_url` 输入；旧 `MIMO_API_KEY` / `MIMO_API_URL` 仍兼容。CLI 提供可信字幕时用 `--skip-asr` 跳过转写；需要识别无字幕对白时，另行配置 ASR provider。`--mimo-video-overview` 是保留旧名的专用整段视频 API 选项。
 
 若 `work_dir/background_research.json` 存在，本技能会把剧情梗概和角色名折入 VLM 上下文；`--context` 可补充一条简短提示。
 
 下面的 `scripts/...` 均相对于本技能目录。若执行器从仓库根目录启动，请给脚本路径加上本技能的绝对目录。
 
 ## 4. 运行命令
+
+以下命令仅用于独立 CLI / 自动化运行。Agent-native 模式按上文理解步骤直接产出索引，不调用此 CLI 视觉 API。
 
 ```bash
 python3 scripts/understand.py <video> --work-dir <work_dir> \

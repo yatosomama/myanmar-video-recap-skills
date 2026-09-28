@@ -44,7 +44,7 @@ The 59-second landscape recap above, *Guohuo (这一秒过火)*, is the final de
 
 Six skills install into Claude Code, Codex CLI, OpenCode, or OpenClaw. You give the video paths and the recap you want in plain language; the agent understands picture and dialogue, decides the story and audiovisual plan, cuts, writes, voices, mixes, and subtitles. Supported inputs: `.mp4 / .mov / .mkv / .webm`.
 
-- **The vision model is not locked to one brand.** Scene understanding uses a configurable multimodal model; any service with OpenAI-compatible Chat Completions image input can be used, including local or hosted models. Burmese narration defaults to Edge TTS (install with `python -m pip install edge-tts` and connect to the network). No GPU or local model download is needed.
+- **The agent uses its own multimodal capability.** When the skill is installed, the agent should inspect the video or extracted frames and combine them with the supplied Chinese subtitles; no vision-model API setup is needed for agent-native runs. Configure the optional compatible multimodal API only for standalone CLI/automation, or when the host has no visual capability. Burmese narration defaults to Edge TTS (install with `python -m pip install edge-tts` and connect to the network). No GPU or local model download is needed.
 - **The editorial decision comes before the sound allocation.** The agent compares edit hypotheses first, writes the viewer promise, POV, dramatic question, and change-based beats into `recap_story_plan.json`, then assigns each beat a picture job and an audio owner: narration is voiced as a block only when it has a defined job, and strong dialogue, action sound, or silence may own an entire beat.
 - **Cut first, narrate second, so the timeline is aligned by construction.** Cut mode renders the shortened video first and writes narration against that output timeline; feed several videos at once and pick ranges by `source_id` to cut one story spine; each video's analysis is saved to a filesystem material library for reuse.
 - **Keep editing after the render.** The multi-track `timeline.json` exports to a JianYing draft with editable source clips, narration, BGM, subtitles, and image overlays; drop in an accurate subtitle file and it becomes the preferred source for original-dialogue captions.
@@ -52,17 +52,17 @@ Six skills install into Claude Code, Codex CLI, OpenCode, or OpenClaw. You give 
 
 ## Install
 
-Prerequisites: Python 3.10 or newer, `ffmpeg` with libass on `PATH` (subtitles are burned in by default), the `edge-tts` command, and a multimodal model API that accepts OpenAI-compatible image input.
+Prerequisites: Python 3.10 or newer, `ffmpeg` with libass on `PATH` (subtitles are burned in by default), and the `edge-tts` command. Agent-native runs use the host's multimodal capability and need no model API setup; standalone CLI/automation runs can use the optional API configuration below.
 
 ```bash
 brew install ffmpeg                        # macOS; apt on Debian/Ubuntu, choco / scoop / winget on Windows
 python -m pip install edge-tts
-export MULTIMODAL_API_URL=https://api.openai.com/v1  # use your provider's OpenAI-compatible endpoint
+export MULTIMODAL_API_URL=https://api.openai.com/v1  # optional: compatible endpoint for CLI runs
 export MULTIMODAL_API_KEY=your-api-key               # optional for local unauthenticated services
-export MULTIMODAL_MODEL=your-vision-model            # model ID with image input support
+export MULTIMODAL_MODEL=your-vision-model            # optional: CLI model ID with image input support
 ```
 
-Provider, deployment, and billing depend on your configured service. Confirm that the model accepts `image_url` content in Chat Completions. When Chinese subtitles are supplied, ASR can be skipped; without subtitles, configure an ASR provider to analyze original dialogue.
+Only standalone CLI/automation runs need a vision API, whose endpoint must accept `image_url` content in Chat Completions. Agent-native runs use the host's multimodal capability and ignore these API variables. Supplied Chinese subtitles remove the need for ASR; configure an ASR provider only when subtitles are unavailable and original dialogue must be transcribed.
 
 Inside Claude Code:
 

@@ -45,7 +45,7 @@
 六个技能装进 Claude Code、Codex CLI、OpenCode 或 OpenClaw，你用自然语言给出视频路径和想要的成片，Agent 负责理解画面与对白、
 决定故事与视听方案、剪辑、写稿、配音、混音和字幕。支持 `.mp4 / .mov / .mkv / .webm`。
 
-- **模型不锁定单一品牌。** 场景视觉理解使用可配置的多模态模型；只要服务端提供 OpenAI-compatible Chat Completions 图像输入即可，可接云端或本地模型。缅甸语旁白默认用 Edge TTS（需 `python -m pip install edge-tts` 和网络连接），不需 GPU，也不下载本地模型。
+- **Agent 直接使用自己的多模态能力。** 安装 skill 后，优先让当前 Agent 直接看视频/抽帧并结合中文字幕理解剧情，不要求配置视觉模型 API。只有独立运行 CLI、自动化处理或宿主没有视觉能力时，才配置兼容的多模态 API。缅甸语旁白默认用 Edge TTS（需 `python -m pip install edge-tts` 和网络连接），不需 GPU，也不下载本地模型。
 - **先做创作决定，再分配声音。** Agent 先比较剪辑假设，把观众承诺、POV、戏剧问题和"发生了什么变化"的 beat 写进 `recap_story_plan.json`，再给每一拍指定画面任务和声音归属：旁白只在有明确任务时整块配音，强对白、动作声或沉默可以完整主导一拍。
 - **先剪后配，时间轴天然对齐。** 剪辑模式先把长视频剪成成片，再对着成片写解说；一次可以传多个视频，按 `source_id` 选段剪成一条主线；每个视频的分析沉淀成文件系统素材库，下次直接复用。
 - **成片之外还能继续改。** 多轨时间线 `timeline.json` 可一键导出剪映草稿，原片、解说、BGM、字幕、图片叠层都可编辑；自带一份准确字幕文件就会被当作原声字幕的首选来源。
@@ -53,18 +53,18 @@
 
 ## 安装
 
-前提：Python 3.10 或更新版本，`PATH` 上有带 libass 的 `ffmpeg`（默认烧录字幕）、`edge-tts` 命令，以及一个支持 OpenAI-compatible 图像输入的多模态模型 API。
+前提：Python 3.10 或更新版本，`PATH` 上有带 libass 的 `ffmpeg`（默认烧录字幕）和 `edge-tts` 命令。由 Agent 直接运行 skill 时，视觉理解使用宿主已有的多模态能力，无需设置模型 API；独立 CLI / 自动化才需要下列可选视觉 API 配置。
 
     python -m pip install edge-tts
 
 ```bash
 brew install ffmpeg                        # macOS；Debian/Ubuntu 用 apt，Windows 用 choco / scoop / winget
-export MULTIMODAL_API_URL=https://api.openai.com/v1  # 填写服务商的 OpenAI-compatible API 地址
-export MULTIMODAL_API_KEY=your-api-key               # 本地免密服务可省略
-export MULTIMODAL_MODEL=your-vision-model            # 填写服务端支持图像输入的模型 ID
+export MULTIMODAL_API_URL=https://api.openai.com/v1  # 可选：CLI 后端的兼容 API 地址
+export MULTIMODAL_API_KEY=your-api-key               # 可选：远程服务的 key，本地免密可省略
+export MULTIMODAL_MODEL=your-vision-model            # 可选：CLI 后端支持图像输入的模型 ID
 ```
 
-模型供应商、部署方式和计费由你配置的服务决定；请确认模型支持 Chat Completions 中的 `image_url` 输入。使用中文字幕时，流程可跳过 ASR；未提供字幕且要分析原对白时，仍需单独配置 ASR provider。
+仅独立 CLI / 自动化需要视觉 API；所选 endpoint 需支持 Chat Completions 中的 `image_url` 输入。直接由 Agent 运行时使用宿主多模态能力，不读取这些 API 配置。使用中文字幕时无需额外配置 ASR；未提供字幕且要分析原对白时，才需要 ASR provider。
 
 在 Claude Code 里执行：
 

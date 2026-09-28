@@ -85,6 +85,14 @@ video-assemble 严格验证，recap 只核对子技能绑定记录引用的是�
 
 ## 3. 环境与脚本路径
 
+### 默认：由当前 Agent 直接使用自己的多模态能力
+
+用户通过 skill 提供短剧视频和中文字幕时，**优先在 Agent 内直接完成视觉理解与剧情判断**，不得把配置 `MULTIMODAL_API_*` 当作开始条件，也不要先要求用户提供模型 API key。先读取全部 SRT 并核对集数，再使用当前宿主实际提供的视频理解能力；宿主不能直接看视频时，用 ffmpeg 按场景切点抽帧，再调用宿主可用的图像理解能力。结合对白、画面、人物关系和连续剧情，形成逐集场景/时间证据、故事节拍、爆点与悬念；旁白和烧录字幕均写成自然缅甸语，再按本技能的声音分工、剪辑、Edge TTS、合成与成片检查流程执行。
+
+Agent-native 模式不调用下方的 API 视觉分析入口；API 配置仅用于用户明确要求独立 CLI/自动化运行，或当前宿主没有可用的多模态视觉能力时。若宿主完全不能读取视频或图片，说明这个宿主缺少的能力并提供 CLI 后端设置方式，不可假装已经看过画面。中文字幕可作为剧情与对白的主要证据，不要因为没有 ASR 服务而中断。
+
+### 可选：独立 CLI / 自动化的视觉 API 后端
+
 ```bash
 # ffmpeg: brew install ffmpeg | apt install ffmpeg | choco install ffmpeg
 export MULTIMODAL_API_URL=https://api.openai.com/v1
@@ -92,7 +100,7 @@ export MULTIMODAL_API_KEY=***  # 本地免密服务可省略
 export MULTIMODAL_MODEL=your-vision-model
 ```
 
-逐场景视觉分析使用可配置的多模态模型，通过 OpenAI-compatible Chat Completions `image_url` 发送抽取帧；需填写服务端地址、模型 ID 与凭证。模型原生接口不兼容此格式时，需使用服务商的兼容 endpoint 或配置适配层。用户提供可读字幕时优先依据字幕理解剧情，并传递 `--skip-asr` 跳过语音转写；无字幕且要理解对白时，另行配置 ASR provider。可选整段视频概览仍只支持专用视频 API 适配器。`--doctor` 只做离线配置检查。
+独立运行 `scripts/recap.py` 时，逐场景视觉分析通过 OpenAI-compatible Chat Completions `image_url` 发送抽取帧；需设置服务端地址和模型 ID，远程服务通常还需凭证，本地免密服务可不设 key。模型原生接口不兼容此格式时，需使用兼容 endpoint 或适配层。用户提供可读字幕时可传递 `--skip-asr` 跳过语音转写。可选整段视频概览仍只支持专用视频 API 适配器。`--doctor` 只检查 CLI 后端配置，不检查 Agent-native 能力。
 
 默认 `--tts-provider edge-tts`，不需 API key，使用缅甸语男声 `my-MM-ThihaNeural`；可用环境变量 `EDGE_TTS_VOICE=my-MM-NilarNeural` 切换为女声，`TTS_PROVIDER` / `--tts-provider` 可显式选择其他 provider。Edge TTS 需要联网。
 
@@ -116,7 +124,15 @@ export MULTIMODAL_MODEL=your-vision-model
 若能识别影片、剧集或主题，先按 video-understanding 技能的调研指南 `research-guide.md` 调研并写入
 `work_dir/background_research.json`。视频理解会把人物名和剧情背景折入 VLM 上下文，避免只得到“黑衣男子”一类模糊描述。无法识别来源时可跳过。
 
-### 4.2 分析并暂停创作
+### 4.2 Agent-native 分析与创作
+
+默认由当前 Agent 直接完成分析，不运行需要视觉 API 的 `recap.py` 理解阶段：使用宿主的视频/图像多模态能力核对场景和动作，逐份阅读用户 SRT，按 `video-understanding` 的输出契约保存理解索引，再按 `video-script` 先定故事节拍、爆点、悬念、原声/旁白归属，之后才写缅甸语旁白。接着调用本仓库的剪辑、Edge TTS 配音、字幕与合成子技能/工具完成渲染，并按 §4.7 实际检查成片。不得因为没有 `MULTIMODAL_API_*` 或 ASR 凭证就要求用户配置或停止；仅当宿主不能看视频/图片时才说明限制。
+
+用户提供 SRT 时以其内容理解剧情和对白，无需调用 ASR；时间点和画面证据必须通过视频或抽帧核实。每集保持人物名、关系、因果和前后集连续性；解说重点讲清变化、反转和追看钩子，避免逐句复述字幕。字幕和旁白都使用自然缅甸语。
+
+### 4.3 独立 CLI 分析与创作
+
+下列命令用于单独运行脚本后端，该路径需要 §3 的可选多模态 API 配置：
 
 ```bash
 python3 scripts/recap.py <video> --work-dir <work_dir> --context "背景；若用户提供字幕，注明其语言和文件路径"
@@ -136,7 +152,7 @@ python3 scripts/recap.py <video> --work-dir <work_dir> --context "背景；若�
 `interrupts_source_sentence` / `unsafe_clip_sentence_boundary` / `no_safe_fit` /
 `timeline_audio_mismatch` 时，应移动边界、缩短整句或删除该块，而不是增加抢断 override。
 
-### 4.3 多视频与素材库
+### 4.4 多视频与素材库
 
 多视频只支持 cut 模式。项目 brief 会列出稳定的 `source_id`，`clip_plan.json` 中每个片段都必须填写来源：
 
@@ -157,7 +173,7 @@ python3 scripts/recap.py ep1.mp4 ep2.mp4 --edit-mode cut --material-library-dir 
 格式与 `scripts/library.py check|list|show` 只读工具见 `references/resource-library.md`。用 `--project recap_project.json` 把已采用的字幕样式、音色与 BGM 绑定到这次运行；
 每次 full / cut 合成后 `work_dir/resource_lock.json` 记下实际用到的资源与授权状态。
 
-### 4.4 继续生成成片
+### 4.5 继续生成成片
 
 写好所需产物后，重复同一条命令：
 
@@ -177,7 +193,7 @@ python3 scripts/recap.py <video> --work-dir <work_dir> --mimo-qc both
 
 已有批准解说稿时加 `--preserve-approved-text`：校验与 TTS 原样保留批准稿（只更新 `overlaps_speech`），装不下时间窗即失败，不缩稿、不降级为部分成功。
 
-### 4.5 字幕与克隆旁白
+### 4.6 字幕与克隆旁白
 
 若要把旁白字幕固定在原片字幕区域，先在仓库根目录运行：
 
@@ -189,7 +205,7 @@ python3 tools/measure_subtitle.py <video>
 
 解说模式如需克隆参考声音，使用 `--voice-ref <audio>`；它与 dub 模式不同。
 
-### 4.6 最终观看与交付复核
+### 4.7 最终观看与交付复核
 
 脚本、接点检测、样帧和 QC 报告都不能替代观看。每轮准备交付前，必须检查**本轮实际要交付的最终文件**，而不是旧别名、无字幕母版或中间代理：
 
@@ -207,7 +223,7 @@ full/cut 交付如需让确定性的最终检查影响命令退出状态，显�
 会保留报告和已渲染诊断媒体，但命令非零退出且不打印完成。默认仍是仅报告、不阻断。
 该参数不支持 `--edit-mode dub`；dub 未传该参数时的准备和渲染行为不变。
 
-### 4.7 不需要解说的片子
+### 4.8 不需要解说的片子
 
 ```bash
 # 对当前整段输入直接合成；不隐式跑理解/ASR/TTS
