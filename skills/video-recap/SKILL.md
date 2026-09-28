@@ -1,8 +1,9 @@
 ---
 name: video-recap
 description: >
- 从输入视频生成中文解说成片或原声剧情短片。用户提供 .mp4 / .mov / .mkv / .webm，并要求剪辑、添加旁白、
- 配音、总结、短剧/电视剧/电影/纪录片/科普解说时使用。负责编排 video-* 技能链：视频理解 →
+ 从输入视频生成缅甸语解说成片或原声剧情短片。用户提供多集短剧视频及对应中文字幕 SRT 并要求本地化解说时，读取配套字幕后直接进入剪辑。
+ 用户提供 .mp4 / .mov / .mkv / .webm，并要求剪辑、添加旁白、配音、总结、短剧/电视剧/电影/纪录片/科普解说时使用。
+ 负责编排 video-* 技能链：视频理解 →
  Agent 制定故事与视听方案 → 剪辑 → 配音 → 合成。触发词：视频解说、视频旁白、生成解说、
  视频 recap、video recap、voiceover、narration、auto-dub、recap。
 ---
@@ -22,15 +23,32 @@ video-understanding ─▶ Agent 按 video-script 制定方案并写稿 ─▶ [
 `narration` 保留上述解说流程，`source-mix` 不做配音，`adopted-packet-copy` 冻结当前输入的已采用 AAC 音轨。
 组合只有下面几条路径，其余组合在启动时直接报错：
 
-| 输入 | `--edit-mode` | `--audio-mode` | Agent 暂停点 | 流程 | 详见 |
+| 输入 | `--edit-mode` | `--audio-mode` | 内部写作阶段 | 流程 | 详见 |
 |---|---|---|---|---|---|
-| 单视频 | full | narration | 1：`narration.json` | 理解 → 写稿 → 校验 → 配音 → 合成 | §4 |
-| 单视频 | cut | narration | 2：`clip_plan.json`，再对着成片写 `narration.json` | 理解 → 剪辑 → 重建输出时间 brief → 写稿 → 配音 → 合成 | §4 |
-| 多视频 | cut | narration | 2：同上，clip 必须带 `source_id` | 逐源理解 → 剪辑 → 写稿 → 配音 → 合成 | §4.3 |
+| 单视频 | full | narration | 写 `narration.json` | 理解 → 写稿 → 校验 → 配音 → 合成 | §4 |
+| 单视频 | cut | narration | 先 `clip_plan.json`，剪完再写 `narration.json` | 理解 → 剪辑 → 重建输出时间 brief → 写稿 → 配音 → 合成 | §4 |
+| 多视频 | cut | narration | 先 `clip_plan.json`，剪完再写 `narration.json`；clip 必须带 `source_id` | 逐源理解 → 剪辑 → 写稿 → 配音 → 合成 | §4.3 |
 | 单视频 | full | source-mix / adopted-packet-copy | 无 | 直接合成当前整段 | §4.7 |
 | 单 / 多视频 | cut | source-mix / adopted-packet-copy | 1：`clip_plan.json` | 理解 → 剪辑 → 合成，不写稿 | §4.7 |
 | 单视频 | dub | narration | 1：`dub_script.json` | 英文转写 → 译稿 → 克隆音色整轨替换 | §5 |
 | 已剪好的母版 | full | narration + 三个采用 JSON | 无 | 只做严格合成 | 下文 |
+
+上表的阶段是 Agent 内部的创作/时间轴切点，不是向用户请求审批的暂停点。输入和默认值齐全时，在同一任务中自行完成写计划、剪片、按剪后时间轴写稿、TTS、合成和成片检查；只在缺少必须输入、素材映射不清或有互相冲突的用户要求时向用户提问。
+
+## 1.1 短剧多集素材接收
+
+用户要求把前几集剪成解说短片并提供多集视频时，默认采用 `--edit-mode cut --audio-mode narration`，处理本轮提供的全部剧集；本仓库默认旁白语言为缅甸语，默认 Edge TTS 声线沿用 §3。不再询问已经由默认值回答的问题（语言、声线、是否继续、普通交付格式）；没有明确时长要求就让剪辑方案按故事完整度和可用素材决定，不额外停下确认。
+
+开始前检查本轮是否能读取每集视频和对应的原语言字幕，优先使用中文字幕 SRT：
+
+- 视频、SRT 都已提供且集数/映射清晰：立即开工，不等用户再确认素材清单。
+- 缺视频或缺关键字幕：一次性列出缺少的具体集数/文件，请用户补齐；不先启动会因缺输入而失败的完整生成流程。
+- 文件数量不同、文件名无法配对、SRT 时间轴明显超出相应视频，或无法判断某份 SRT 属于哪一集：先用文件名、集数编号、时间戳范围和字幕内容尝试匹配；仍有多个合理映射时，只问清这些有歧义的项。
+- 用户已经说明集数、时长、画幅、旁白语言/声线或交付目的时沿用其要求；仅当要求互相冲突且会改变成片时才追问。
+
+实际打开并阅读每份 SRT，不可只把路径写进 `--context` 后就当作字幕已导入。当前 `recap.py` 没有 SRT 命令行参数：将字幕按集整理为 `work_dir/source_subtitle_notes.md`（角色名、关系、关键事件、反转/钩子及对应字幕时间段），把精简剧情摘要和字幕文件路径写入 `--context`，创作方案和旁白撰写时回看该笔记。字幕优先作为对白内容和剧情理解证据；画面动作、人物出入及剪点仍须对照相应视频核实，不能仅凭字幕推断画面中发生了什么。自动 ASR 与 SRT 冲突时保留用户提供的字幕原文，并检查它是否确属当前集。
+
+把这些准备作为 Agent 内部步骤连续执行，不在生成理解 brief、`clip_plan.json` 或 `edited_source.mp4` 后向用户索要继续许可。缺少外部服务凭证时，说明缺的是哪个本地配置并停在可继续的阶段；不要让用户把 API key 或 bot token 发在聊天里。
 
 所有 full/cut 路径共用同一段收尾：（有旁白时）评审 → TTS → 合成 → 成片 QC。使用原声模式时读
 `references/audio-routing.md`。
@@ -72,13 +90,14 @@ video-assemble 严格验证，recap 只核对子技能绑定记录引用的是�
 export MIMO_API_KEY=***
 ```
 
-同一个 MiMo key 驱动：
+MiMo key 驱动：
 
 - ASR：`mimo-v2.5-asr`
 - VLM：`mimo-v2.5`
-- TTS：`mimo-v2.5-tts`
 
-TTS 供应商由 `--tts-provider mimo-tts|fish-audio|index-tts`（或 `TTS_PROVIDER`）透传给配音技能；Fish Audio 与自托管 index-tts 各自的环境变量、默认音色和能力限制见该技能。ASR/VLM 始终使用 MiMo。`--doctor` 只做离线配置检查。
+默认 `--tts-provider edge-tts`，不需 API key，使用缅甸语男声 `my-MM-ThihaNeural`；可用环境变量 `EDGE_TTS_VOICE=my-MM-NilarNeural` 切换为女声，`TTS_PROVIDER` / `--tts-provider` 可显式选择其他 provider。Edge TTS 需要联网。ASR/VLM 仍使用 MiMo；若用户提供了可读字幕，应优先以字幕理解剧情，不要把自动 ASR 当作剧情事实来源。`--doctor` 只做离线配置检查。
+
+本仓库默认交付语言是缅甸语。编排、写稿、字幕和旁白要求见 `../video-script/references/myanmar-localization.md`；除非用户明确指定另一种目标语言，不得回退成中文解说。
 
 `tp-*` Token Plan 密钥默认使用中国区集群，可用 `MIMO_TOKEN_PLAN_CLUSTER` 覆盖。
 
@@ -101,14 +120,14 @@ MiMo QC 默认关闭；每个选定阶段最多请求一次，写入 `mimo_qc.js
 ### 4.2 分析并暂停创作
 
 ```bash
-python3 scripts/recap.py <video> --work-dir <work_dir> --context "背景"
+python3 scripts/recap.py <video> --work-dir <work_dir> --context "背景；若用户提供字幕，注明其语言和文件路径"
 ```
 
 命令完成视频理解、写出 `agent_narration_brief.md`，然后暂停。此时按以下顺序执行 `video-script`：
 
 1. 查看创作 brief 与原片故事板。
-2. 写 `recap_story_plan.json` 和 `visual_audio_board.json`。
-3. full 模式写 `narration.json`；cut 模式第一阶段只写 `clip_plan.json`。
+2. 先阅读 `../video-script/references/myanmar-localization.md`，再写 `recap_story_plan.json` 和 `visual_audio_board.json`。
+3. full 模式写缅甸语 `narration.json`；cut 模式第一阶段只写 `clip_plan.json`。
 4. cut 模式第二阶段查看剪后故事板，补充输出时间与声音分工，再写 `narration.json`。
 
 不要从标题或旁白句子开始；先锁定故事体验和素材选择。
@@ -167,7 +186,7 @@ python3 scripts/recap.py <video> --work-dir <work_dir> --mimo-qc both
 python3 tools/measure_subtitle.py <video>
 ```
 
-再传入测得的 `--subtitle-y-top/--subtitle-y-bot`。坐标基于 ffmpeg 自动旋转后的显示画布，区间为半开 `[top, bot)`，并要求底对齐 ASS 样式；显式设置后，该区域默认使用 60% 透明度的旁白窗口遮罩。
+再传入测得的 `--subtitle-y-top/--subtitle-y-bot`。坐标基于 ffmpeg 自动旋转后的显示画布，区间为半开 `[top, bot)`，支持底对齐 ASS 样式（1/2/3）或模糊带居中（5）。居中模式把每条字幕锚定在实测字幕带中央；显式设置后，该区域默认使用 60% 透明度的旁白窗口遮罩。
 
 解说模式如需克隆参考声音，使用 `--voice-ref <audio>`；它与 dub 模式不同。
 

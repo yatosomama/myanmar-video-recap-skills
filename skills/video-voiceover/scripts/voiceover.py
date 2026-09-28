@@ -19,6 +19,7 @@ from approved_text_policy import (
     write_json_atomically as _write_tts_meta_atomically,
 )
 from providers.fish_audio import synthesize_fish_audio
+from providers.edge_tts import synthesize_edge_tts
 import providers.index_tts as index_provider
 from lib import (
     CONFIG,
@@ -35,7 +36,7 @@ from lib import (
 # Re-exported: tests and callers reach these through voiceover, the module owns the flow.
 from tts_audio import _maybe_normalize_tts_wav, _normalize_tts_wav_rms  # noqa: F401
 
-SUPPORTED_TTS_ENGINES = {"mimo-tts", "fish-audio", "index-tts"}
+SUPPORTED_TTS_ENGINES = {"mimo-tts", "fish-audio", "index-tts", "edge-tts"}
 SEGMENT_AUDIO_SCHEMA_VERSION = 1
 VOICE_REFERENCE_PREP_VERSION = 1
 _VOICE_REFERENCE_LOCK = Lock()
@@ -281,10 +282,12 @@ def synthesize_tts(narration, work_dir):
     )
 
     cache_engine = _configured_tts_engine_for_cache()
-    if cache_engine in {"fish-audio", "index-tts"} and voice_ref:
+    if cache_engine in {"fish-audio", "index-tts", "edge-tts"} and voice_ref:
         if cache_engine == "fish-audio":
             raise RuntimeError("Fish Audio 不接受本地 VOICE_REF/--voice-ref；请改用 FISH_TTS_REFERENCE_ID")
-        raise RuntimeError("index-tts 不支持本地 VOICE_REF/--voice-ref 克隆")
+        if cache_engine == "index-tts":
+            raise RuntimeError("index-tts 不支持本地 VOICE_REF/--voice-ref 克隆")
+        raise RuntimeError("Edge TTS 不支持本地 VOICE_REF/--voice-ref 克隆")
     # A fully cached narration needs no credential: probe every segment's sidecar once here;
     # hits are final and only misses reach the workers (with their prepared inputs).
     segments = []
@@ -390,6 +393,8 @@ def _run_tts_engine(engine, text, output_wav, rate="+0%", pitch="+0Hz", emotion=
                 _tts_mimo(text, output_wav, rate=rate, pitch=pitch, emotion=emotion)
             elif engine == "fish-audio":
                 synthesize_fish_audio(text, output_wav, rate=rate)
+            elif engine == "edge-tts":
+                receipt = synthesize_edge_tts(text, output_wav, rate=rate, pitch=pitch)
             else:
                 receipt = index_provider.synthesize_configured(text, output_wav, CONFIG)
             if get_video_duration(output_wav) <= 0:
@@ -530,7 +535,7 @@ def _configured_tts_engine_for_cache():
         return "fish-audio"
     if provider not in SUPPORTED_TTS_ENGINES:
         raise RuntimeError(
-            "TTS_PROVIDER/--tts-provider 必须是 auto、mimo-tts、fish-audio 或 index-tts"
+            "TTS_PROVIDER/--tts-provider 必须是 auto、mimo-tts、fish-audio、index-tts 或 edge-tts"
         )
     return provider
 
@@ -539,6 +544,8 @@ def resolve_tts_engine():
     """Resolve the selected MiMo or Fish Audio TTS engine and require its credential."""
     engine = _configured_tts_engine_for_cache()
     if engine == "index-tts":
+        return engine
+    if engine == "edge-tts":
         return engine
     if engine == "fish-audio":
         if CONFIG["fish_api_key"]:
@@ -566,6 +573,8 @@ def tts_settings_payload(engine):
     }
     if engine == "index-tts":
         settings.update(index_provider.cache_settings(CONFIG))
+    elif engine == "edge-tts":
+        settings["edge_tts_voice"] = os.environ.get("EDGE_TTS_VOICE", "my-MM-ThihaNeural")
     elif engine == "fish-audio":
         settings.update(
             {
@@ -714,9 +723,9 @@ def main():
     ap.add_argument("--mimo-voice", default=None, help="MiMo TTS voice name")
     ap.add_argument(
         "--tts-provider",
-        default=os.environ.get("TTS_PROVIDER", "auto"),
-        choices=["auto", "mimo-tts", "fish-audio", "index-tts"],
-        help="TTS provider (default: MiMo when configured, otherwise Fish Audio)",
+        default=os.environ.get("TTS_PROVIDER", "edge-tts"),
+        choices=["auto", "mimo-tts", "fish-audio", "index-tts", "edge-tts"],
+        help="TTS provider (default: free Edge TTS with a Burmese voice)",
     )
     ap.add_argument("--voice-ref", default=None,
                     help="reference audio (wav/mp3/etc.) for mimo-v2.5-tts-voiceclone")
@@ -739,7 +748,7 @@ def main():
         CONFIG["mimo_tts_voice"] = args.mimo_voice
     if args.mimo_voice and CONFIG["voice_ref"]:
         ap.error("--mimo-voice and --voice-ref are mutually exclusive")
-    if args.mimo_voice and args.tts_provider in {"fish-audio", "index-tts"}:
+    if args.mimo_voice and args.tts_provider in {"fish-audio", "index-tts", "edge-tts"}:
         ap.error("--mimo-voice is only supported by the MiMo TTS provider")
     # A local --voice-ref with fish-audio/index-tts is rejected by synthesize_tts.
     # Voice-reference normalization is intentionally lazy: a fully cached rerun should not

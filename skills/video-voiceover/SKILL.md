@@ -2,8 +2,8 @@
 name: video-voiceover
 user-invocable: false
 description: >
- 把带时间戳的 narration.json 合成为中文解说音频。使用 MiMo TTS（mimo-v2.5-tts）或
- Fish Audio（s2.1-pro-free）或显式配置的通用 IndexTTS HTTP 服务逐段生成语音，
+ 把带时间戳的 narration.json 合成为缅甸语解说音频。默认使用无需 API key 的 Edge TTS，
+ 也可选 MiMo TTS（mimo-v2.5-tts）、Fish Audio（s2.1-pro-free）或显式配置的通用 IndexTTS HTTP 服务逐段生成语音，
  按时间窗动态适配语速并处理响度；输入输出时间线上的旁白，产出 tts_segments 与 tts_meta.json。
  触发词：配音、语音合成、TTS、解说配音、
  voiceover、text to speech、旁白配音。
@@ -12,11 +12,17 @@ description: >
 ## 1. 定位
 
 本技能读取带时间戳的旁白稿，为每一段生成独立音频，并把语音适配到对应时间窗，随后记录下游合成所需的放置元数据。
-默认引擎是 MiMo TTS（`mimo-v2.5-tts`）；也可显式选择 Fish Audio（默认模型 `s2.1-pro-free`）。
+默认引擎是 Edge TTS 的缅甸语男声（`my-MM-ThihaNeural`），无需 API key，但需要联网。可用 `EDGE_TTS_VOICE=my-MM-NilarNeural` 切为缅甸语女声。其他既有供应商仍可显式选择。
+首次使用需安装命令：`python -m pip install edge-tts`。若 `edge-tts` 不在 `PATH` 中，可设置 `EDGE_TTS_BIN` 为可执行文件的完整路径。
 
 ## 2. 环境要求
 
 ```bash
+# Edge TTS 是默认配置，无需设置 key
+# 可选：缅甸语男声
+export EDGE_TTS_VOICE=my-MM-ThihaNeural
+
+# 或切换为 MiMo TTS
 export MIMO_API_KEY=***  # 也可使用仅供 TTS 的 MIMO_TTS_API_KEY
 
 # 或改用 Fish Audio TTS
@@ -41,7 +47,7 @@ cut 流程先剪后配：`narration.json` 本身就是按剪后成片的输出�
 
 ```bash
 python3 scripts/voiceover.py --work-dir <work_dir> --narration <narration.json> \
-  [--tts-provider auto|mimo-tts|fish-audio|index-tts] \
+  [--tts-provider edge-tts|auto|mimo-tts|fish-audio|index-tts] \
   [--mimo-voice 冰糖 | --voice-ref <reference-audio>] \
   [--preserve-approved-text]
 ```
@@ -75,6 +81,7 @@ python3 scripts/voiceover.py --work-dir <work_dir> --narration <narration.json> 
 - 自托管 index-tts 端点只能由 `--tts-provider index-tts` 或 `TTS_PROVIDER=index-tts` 显式选择，`auto`
   永不兜底选择它。协议、请求体、receipt 语义与缓存失效规则见 `references/index-tts.md`。
 - Fish Audio 直接请求 WAV；默认使用“娱乐扒妹”音色（`5653cea4ac83480aaf2bf45406556185`），`FISH_TTS_REFERENCE_ID` 可覆盖。模型、音色 ID、API URL、动态语速或归一化设置变化时会重新生成缓存。当前免费模型无 SLA，受 Fair Use 和官方免费期限约束。
+- Edge TTS 通过已安装的 `edge-tts` 命令连接 Microsoft 在线语音服务，将 `my-MM` MP3 转为统一的 24 kHz 单声道 WAV。默认 voice 为 `my-MM-ThihaNeural`；`EDGE_TTS_VOICE` 只接受 `my-MM-*` 缅甸语 voice。此路径不接受参考音频克隆。
 - `--voice-ref` 仅用于 full/cut 解说克隆，切换到 `mimo-v2.5-tts-voiceclone`。仅在确需新合成时惰性规范化一次；
 - dub voiceclone 原始 WAV 也会按模型、提示、台词和参考音频的 `size`/`mtime_ns` 缓存；匹配重跑不再重复请求或计费，`dub_manifest.json` 逐行记录 `tts_cache=hit|miss`；
   参考音频文件变化会使旧缓存失效。仅在获得授权后使用，参考音频会发送到 MiMo。
@@ -88,4 +95,4 @@ python3 scripts/voiceover.py --work-dir <work_dir> --narration <narration.json> 
 - 超窗时默认在句界自动缩稿并在 `spoken_text/truncated` 留痕；批准稿加 `--preserve-approved-text`。
 - 不混流、不压低原声、不渲染字幕。
 - 不分析视频，也不选择时间点；只为输入稿件中的既定分段配音。
-- Fish Audio 与 IndexTTS 路径都不接受本地 `--voice-ref`；前者用已创建的 `FISH_TTS_REFERENCE_ID` 选择音色。
+- Fish Audio、IndexTTS 与 Edge TTS 路径都不接受本地 `--voice-ref`；Fish Audio 用 `FISH_TTS_REFERENCE_ID` 选择音色。

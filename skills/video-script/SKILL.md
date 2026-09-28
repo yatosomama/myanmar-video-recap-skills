@@ -1,7 +1,7 @@
 ---
 name: video-script
 description: >
- 对已完成分析的视频进行导演与剪辑策划，再写带时间戳的中文解说并校验；也处理已有短片的
+ 对已完成分析的视频进行导演与剪辑策划，再写带时间戳的缅甸语解说并校验；也处理已有短片的
  宣发标题、花字修订和外部文案回填。普通策划输入 work_dir 的 agent_narration_brief.md 与
  vlm_analysis.json；文案返修输入当前成片的工程与内容证据。策划输出 recap_story_plan.json、visual_audio_board.json、
  可选 style_card.json、cut 模式需要的 clip_plan.json，以及通过校验的 narration.json；仅宣发文案任务交付提案或回填既有包装计划。
@@ -14,6 +14,8 @@ description: >
 只改宣发标题、封面、花字或回填外部文案时，直接读 `references/promotional-copy.md`，
 按当前短片的观看理由和兑现位置处理指定文字层，不重做下述策划/旁白链。
 普通解说写作不因此增加平台调研或包装任务。
+
+写任何解说前先阅读 `references/myanmar-localization.md`。除非用户明确改了目标语言，所有剧情梗概、旁白、旁白字幕和文案默认使用自然口语缅甸语。
 
 本技能负责：创作方向、画面/声音计划、旁白写作与校验。Agent 不是 JSON 填写器，而要依次扮演：
 

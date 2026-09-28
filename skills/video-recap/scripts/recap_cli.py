@@ -6,7 +6,7 @@ import os
 from lib import env_bool
 from recap_source import AUDIO_MODES
 
-TTS_PROVIDERS = ("auto", "mimo-tts", "fish-audio", "index-tts")
+TTS_PROVIDERS = ("auto", "mimo-tts", "fish-audio", "index-tts", "edge-tts")
 
 
 class _RecordExplicit:
@@ -78,9 +78,9 @@ def parse_args(argv=None):
     voice.add_argument("--audio-stream-index", type=int, default=0)
     voice.add_argument(
         "--tts-provider",
-        default=os.environ.get("TTS_PROVIDER", "auto"),
+        default=os.environ.get("TTS_PROVIDER", "edge-tts"),
         choices=TTS_PROVIDERS,
-        help="voiceover provider; auto prefers configured MiMo, then Fish Audio; Index is explicit",
+        help="voiceover provider; default is Edge TTS with a Burmese voice",
     )
     voice.add_argument("--mimo-tts-voice", default=None, help="MiMo TTS voice")
     voice.add_argument(

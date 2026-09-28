@@ -124,7 +124,7 @@ CONFIG = {
         "MIMO_TTS_STYLE",
         "自然、清晰、有感染力，像在给观众讲故事；随剧情起伏，该紧张时紧张、该动情时动情，不平铺直叙。",
     ),
-    "tts_provider": os.environ.get("TTS_PROVIDER", "auto").strip().lower(),
+    "tts_provider": os.environ.get("TTS_PROVIDER", "edge-tts").strip().lower(),
     "tts_timeout": env_int("TTS_TIMEOUT", 300, minimum=1),
     "fish_api_key": os.environ.get("FISH_API_KEY", ""),
     "fish_tts_api_url": os.environ.get("FISH_TTS_API_URL", DEFAULT_FISH_TTS_API_URL),
@@ -134,7 +134,7 @@ CONFIG = {
     ).strip(),
     "mimo_disable_thinking": env_bool("MIMO_DISABLE_THINKING", True),
     "breath_ms": 250,  # 段间呼吸空间(ms)；block recap 块内连贯、块间留原声呼吸
-    "narration_speed": env_float("NARRATION_SPEED", 1.15, minimum=0.5),  # 解说整体提速(atempo)，默认回到可懂区间；长片可设 1.0
+    "narration_speed": env_float("NARRATION_SPEED", 1.27, minimum=0.5),  # 缅甸语解说整体提速；长片可设 1.0
     "narration_cumulative_tempo_max": env_float("NARRATION_CUMULATIVE_TEMPO_MAX", 1.35, minimum=1.0),  # TTS rate × 全局 atempo × 段内 atempo 的累计上限
     "narration_cumulative_tempo_hard_max": env_float("NARRATION_CUMULATIVE_TEMPO_HARD_MAX", 1.40, minimum=1.0),  # QC/阻断硬上限
     "tts_segment_tempo_max": env_float("TTS_SEGMENT_TEMPO_MAX", 1.20, minimum=1.0),  # 兼容旧段内 atempo 上限；实际会被累计预算收紧

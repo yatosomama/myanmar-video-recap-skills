@@ -352,7 +352,10 @@ def _apply_source_sentence_handoffs(tts_segments, work_dir, video_duration):
 def _amix_tail(narr_vol, bgm_chain=""):
     """Mix the prepared original track [orig] (+ optional BGM bed) with the boosted
     narration [narr] into [aout]. bgm_chain, when given, defines [bgm] from input [2:a]."""
-    narr = f"[1:a]volume={narr_vol},aresample=48000[narr];"
+    narr = (
+        f"[1:a]volume={narr_vol},"
+        f"volume={CONFIG['narration_gain_db']:.2f}dB,aresample=48000[narr];"
+    )
     if bgm_chain:
         return bgm_chain + narr + "[orig][bgm][narr]amix=inputs=3:duration=first:dropout_transition=0:normalize=0[aout]"
     return narr + "[orig][narr]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]"
@@ -441,7 +444,10 @@ def _build_audio_filter_complex(
             f":attack={CONFIG['ducking_attack']}:release={CONFIG['ducking_release']}"
             f":knee=2.5:makeup={CONFIG['ducking_makeup']}:level_sc={CONFIG['ducking_level_sc']}[orig];"
         )
-        narr = f"[scnarr]volume={narr_vol}[narr];"
+        narr = (
+            f"[scnarr]volume={narr_vol},"
+            f"volume={CONFIG['narration_gain_db']:.2f}dB[narr];"
+        )
         if bgm_chain:
             return head + bgm_chain + narr + "[orig][bgm][narr]amix=inputs=3:duration=first:dropout_transition=0:normalize=0[aout]"
         return head + narr + "[orig][narr]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]"

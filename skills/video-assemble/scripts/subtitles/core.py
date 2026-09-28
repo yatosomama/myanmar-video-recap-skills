@@ -116,20 +116,26 @@ def _measured_subtitle_band(canvas):
 
 
 def _style_for_measured_subtitle_band(style, canvas):
-    """Fit the ASS baseline and font into explicit auto-rotated display-frame Y coordinates."""
+    """Fit ASS subtitle positioning and font into an explicit measured Y band."""
     style = dict(style)
     safe_area = _measured_subtitle_safe_area(style, canvas)
     if safe_area is None:
         return style
     alignment = style["alignment"]
-    if alignment not in {1, 2, 3}:
+    if alignment not in {1, 2, 3, 5}:
         raise ValueError(
-            "measured subtitle coordinates require a bottom-aligned ASS style "
-            f"(SUBTITLE_ALIGNMENT 1/2/3); got {alignment}"
+            "measured subtitle coordinates require bottom alignment (1/2/3) "
+            f"or center alignment (5); got {alignment}"
         )
     canvas_h = canvas["height"]
     scale_y = float(style["play_res_y"]) / canvas_h
-    style["margin_v"] = max(0, round((canvas_h - CONFIG["subtitle_y_bot"]) * scale_y))
+    if alignment in {1, 2, 3}:
+        style["margin_v"] = max(0, round((canvas_h - CONFIG["subtitle_y_bot"]) * scale_y))
+    else:
+        safe_top = max(0, CONFIG["subtitle_y_top"] - CONFIG["subtitle_mask_padding"])
+        style["measured_center_y"] = round(
+            ((safe_top + CONFIG["subtitle_y_bot"]) / 2) * scale_y
+        )
     current_font = int(style["font_size"])
     current_outline = float(style["outline"])
     current_shadow = float(style["shadow"])
@@ -138,7 +144,8 @@ def _style_for_measured_subtitle_band(style, canvas):
         scale = candidate / current_font
         outline = max(1 if current_outline > 0 else 0, round(current_outline * scale))
         shadow = max(0, round(current_shadow * scale))
-        if candidate * 1.25 + outline * 2 + shadow <= available_height + 1e-6:
+        vertical_factor = 2.5 if alignment == 5 else 1.25
+        if candidate * vertical_factor + outline * 2 + shadow <= available_height + 1e-6:
             fitted_font = candidate
             break
     else:

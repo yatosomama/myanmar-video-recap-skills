@@ -70,6 +70,8 @@ def _generate_ass(narration, work_dir, video_duration, canvas):
     # entries are already split into short one-line chunks, so no wrapping here.
     for entry in _combined_subtitle_entries(narration, work_dir, video_duration):
         text = _escape_ass_text(entry["text"] if entry.get("_bound_track") else _normalize_subtitle_text(entry["text"]))
+        if "measured_center_y" in style:
+            text = f"{{\\an5\\pos({style['play_res_x'] // 2},{style['measured_center_y']})}}" + text
         ass_lines.append(
             "Dialogue: 0,"
             f"{entry.get('ass_start', _seconds_to_ass_time(entry['start']))},"

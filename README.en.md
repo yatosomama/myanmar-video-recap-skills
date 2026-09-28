@@ -7,7 +7,7 @@
 <h1 align="center">Video Recap Skills</h1>
 
 <p align="center">
-  <b>Turn one or several videos into a Chinese-narration recap: six skills inside the coding agent you already use, ffmpeg locally, one Xiaomi MiMo key remotely, and an optional JianYing/CapCut draft to keep editing by hand.</b>
+  <b>Turn short dramas and other videos into Burmese-narration recaps: six skills inside the coding agent you already use, Burmese Edge TTS by default, and an optional JianYing/CapCut draft to keep editing by hand.</b>
 </p>
 
 <p align="center">
@@ -42,7 +42,7 @@ The 59-second landscape recap above, *Guohuo (这一秒过火)*, is the final de
 
 Six skills install into Claude Code, Codex CLI, OpenCode, or OpenClaw. You give the video paths and the recap you want in plain language; the agent understands picture and dialogue, decides the story and audiovisual plan, cuts, writes, voices, mixes, and subtitles. Supported inputs: `.mp4 / .mov / .mkv / .webm`.
 
-- **One key, ffmpeg locally.** ASR, VLM, and TTS all go through [Xiaomi MiMo](https://platform.xiaomimimo.com); the local runtime is Python's standard library plus `ffmpeg`, with no GPU, no `pip install`, and no model downloads. Voiceover can switch to Fish Audio, which replaces only that stage.
+- **Burmese TTS needs no API key by default.** ASR and VLM still use [Xiaomi MiMo](https://platform.xiaomimimo.com); Burmese narration uses Edge TTS (install with `python -m pip install edge-tts` and connect to the network). No GPU or local model download is needed.
 - **The editorial decision comes before the sound allocation.** The agent compares edit hypotheses first, writes the viewer promise, POV, dramatic question, and change-based beats into `recap_story_plan.json`, then assigns each beat a picture job and an audio owner: narration is voiced as a block only when it has a defined job, and strong dialogue, action sound, or silence may own an entire beat.
 - **Cut first, narrate second, so the timeline is aligned by construction.** Cut mode renders the shortened video first and writes narration against that output timeline; feed several videos at once and pick ranges by `source_id` to cut one story spine; each video's analysis is saved to a filesystem material library for reuse.
 - **Keep editing after the render.** The multi-track `timeline.json` exports to a JianYing draft with editable source clips, narration, BGM, subtitles, and image overlays; drop in an accurate subtitle file and it becomes the preferred source for original-dialogue captions.
@@ -50,10 +50,11 @@ Six skills install into Claude Code, Codex CLI, OpenCode, or OpenClaw. You give 
 
 ## Install
 
-Prerequisites: Python 3.10 or newer, `ffmpeg` with libass on `PATH` (subtitles are burned in by default), and one [Xiaomi MiMo](https://platform.xiaomimimo.com) API key.
+Prerequisites: Python 3.10 or newer, `ffmpeg` with libass on `PATH` (subtitles are burned in by default), the `edge-tts` command, and one [Xiaomi MiMo](https://platform.xiaomimimo.com) API key for video understanding.
 
 ```bash
 brew install ffmpeg                        # macOS; apt on Debian/Ubuntu, choco / scoop / winget on Windows
+python -m pip install edge-tts
 export MIMO_API_KEY=your-mimo-key          # Windows PowerShell: $env:MIMO_API_KEY="your-mimo-key"
 export MIMO_TOKEN_PLAN_CLUSTER=cn          # tp-* Token Plan keys only: cn | sgp | ams
 ```
@@ -311,7 +312,7 @@ Copy one and adjust it. Give the video path, the recap you want, and any useful 
 **Full-video recap:**
 
 ```text
-Make a Chinese-narration recap of /path/to/video.mp4. It is episode 1 of 庆余年, the lead is 范闲, and subtitles should be burned in.
+Make a Burmese-narration recap of /path/to/video.mp4. It is episode 1 of 庆余年, the lead is 范闲, and subtitles should be burned in.
 ```
 
 **Cut a long video or several episodes into one short recap:**
@@ -463,6 +464,6 @@ This project is maintained by [ZenStory AI](https://zenstory.ai) — open-source
 | [oh-story-claudecode](https://github.com/zenstory-ai/oh-story-claudecode) | Web-fiction writing skill pack: chart scanning, deconstruction, drafting, de-AI-flavor, covers |
 | [drama-skills](https://github.com/zenstory-ai/drama-skills) | AI short-drama / motion-comic suite: scripts, assets, storyboards, image & video prompts, review |
 | [novel-to-game](https://github.com/zenstory-ai/novel-to-game) | Agent skills for source-grounded novel adaptation, target-runtime builds, and evidence-based QA |
-| [video-recap-skills](https://github.com/zenstory-ai/video-recap-skills) | Create Chinese-narration recaps from supported video files, with optional editable JianYing/CapCut draft export (this repo) |
+| [video-recap-skills](https://github.com/zenstory-ai/video-recap-skills) | Create Burmese-narration recaps from supported video files, with optional editable JianYing/CapCut draft export (this repo) |
 | [oh-story-dsh](https://github.com/zenstory-ai/oh-story-dsh) | Community DeepSeek Harness plugin with novel, short-drama, game and video-recap workbenches |
 | [zenstory](https://github.com/zenstory-ai/zenstory) | Chat-to-create AI novel-writing workbench ([app.zenstory.ai](https://app.zenstory.ai)) |

@@ -2,7 +2,7 @@
 """Environment doctor for the video-recap skill bundle.
 
 The pipeline runs on ffmpeg + MiMo for understanding; voiceover may explicitly use
-MiMo, Fish Audio, or a privately configured Index TTS endpoint.
+Edge TTS, MiMo, Fish Audio, or a privately configured Index TTS endpoint.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from lib import CONFIG
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEGRADED_GROUP = "warnings/degraded"
-TTS_PROVIDERS = ("auto", "mimo-tts", "fish-audio", "index-tts")
+TTS_PROVIDERS = ("auto", "mimo-tts", "fish-audio", "index-tts", "edge-tts")
 
 
 def _command_path(name: str) -> str | None:
@@ -175,7 +175,7 @@ def _build_capability_menu(checks: dict) -> dict[str, list[dict[str, str]]]:
             _capability(
                 "mimo_credentials",
                 "Missing MIMO_API_KEY",
-                action="Set MIMO_API_KEY; the default ASR / VLM / TTS path depends on it.",
+                action="Set MIMO_API_KEY for default ASR / VLM video understanding; Burmese Edge TTS does not use this key.",
             )
         )
 
@@ -332,13 +332,18 @@ def build_report(*, tts_provider: str | None = None) -> dict[str, object]:
         effective_tts_provider = (
             "mimo-tts" if mimo_tts_configured or not fish_tts_configured else "fish-audio"
         )
-    if effective_tts_provider == "fish-audio":
+    edge_tts_path = _command_path("edge-tts") if effective_tts_provider == "edge-tts" else ""
+    if effective_tts_provider == "edge-tts":
+        tts_configured = bool(edge_tts_path)
+    elif effective_tts_provider == "fish-audio":
         tts_configured = fish_tts_configured
     elif effective_tts_provider == "index-tts":
         tts_configured = index_tts["index_tts_configured"]
     else:
         tts_configured = mimo_tts_configured
-    if effective_tts_provider == "fish-audio":
+    if effective_tts_provider == "edge-tts":
+        tts_model = "Microsoft Edge online TTS"
+    elif effective_tts_provider == "fish-audio":
         tts_model = CONFIG["fish_tts_model"]
     elif effective_tts_provider == "index-tts":
         tts_model = "provider-managed"
@@ -370,6 +375,7 @@ def build_report(*, tts_provider: str | None = None) -> dict[str, object]:
             "fish_tts_model": CONFIG["fish_tts_model"],
             "fish_tts_reference_id_set": bool(CONFIG["fish_tts_reference_id"]),
             "fish_tts_reference_id_source": CONFIG["fish_tts_reference_id_source"],
+            "edge_tts_path": edge_tts_path,
             **index_tts,
             "model": tts_model,
             "available": tts_configured,
@@ -482,7 +488,10 @@ def _print_human(report: dict) -> None:
         f"{'configured' if tts['available'] else 'not configured'}"
     )
     print(f"✓ TTS model: {tts['model']}")
-    if tts["provider"] == "fish-audio":
+    if tts["provider"] == "edge-tts":
+        print(f"✓ Burmese TTS voice: {os.environ.get('EDGE_TTS_VOICE', 'my-MM-ThihaNeural')}")
+        print(f"✓ Edge TTS executable: {tts['edge_tts_path']}")
+    elif tts["provider"] == "fish-audio":
         print(
             "✓ TTS voice reference ID: "
             f"{'set' if tts['fish_tts_reference_id_set'] else 'not set'} "

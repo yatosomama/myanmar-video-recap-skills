@@ -158,7 +158,7 @@ CONFIG = {
     "mimo_tts_model_source": "env" if os.environ.get("MIMO_TTS_MODEL") else "default",
     "mimo_tts_voice": os.environ.get("MIMO_TTS_VOICE", "冰糖"),
     "mimo_tts_voice_source": "env" if os.environ.get("MIMO_TTS_VOICE") else "default",
-    "tts_provider": os.environ.get("TTS_PROVIDER", "auto").strip().lower(),
+    "tts_provider": os.environ.get("TTS_PROVIDER", "edge-tts").strip().lower(),
     "fish_api_key": os.environ.get("FISH_API_KEY", ""),
     "fish_tts_api_url": os.environ.get("FISH_TTS_API_URL", DEFAULT_FISH_TTS_API_URL),
     "fish_tts_model": os.environ.get("FISH_TTS_MODEL", DEFAULT_FISH_TTS_MODEL),

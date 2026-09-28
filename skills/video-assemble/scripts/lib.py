@@ -80,7 +80,7 @@ CONFIG = {
     "jianying_bundle_media": env_bool("JIANYING_BUNDLE_MEDIA", True),  # 默认开：macOS 剪映沙箱读不到外部路径，须把素材拷进草稿目录
     "bgm_volume": env_float("BGM_VOLUME", 0.18, minimum=0.0),  # BGM 铺底音量
     "bgm_ducking_volume": env_float("BGM_DUCKING_VOLUME", 0.10, minimum=0.0),  # 旁白时 BGM 压低到的音量
-    "narration_speed": env_float("NARRATION_SPEED", 1.15, minimum=0.5),  # 解说整体提速(atempo)，默认回到可懂区间；长片可设 1.0
+    "narration_speed": env_float("NARRATION_SPEED", 1.27, minimum=0.5),  # 缅甸语解说整体提速；长片可设 1.0
     "narration_cumulative_tempo_max": env_float("NARRATION_CUMULATIVE_TEMPO_MAX", 1.35, minimum=1.0),  # TTS rate × 全局 atempo × 段内 atempo 的累计上限
     "narration_cumulative_tempo_hard_max": env_float("NARRATION_CUMULATIVE_TEMPO_HARD_MAX", 1.40, minimum=1.0),  # QC/阻断硬上限
     "tts_segment_tempo_max": env_float("TTS_SEGMENT_TEMPO_MAX", 1.20, minimum=1.0),  # 兼容旧段内 atempo 上限；实际会被累计预算收紧
@@ -130,6 +130,7 @@ CONFIG = {
     "subtitle_margin_l": env_int("SUBTITLE_MARGIN_L", 40, minimum=0),
     "subtitle_margin_r": env_int("SUBTITLE_MARGIN_R", 40, minimum=0),
     "subtitle_alignment": env_int("SUBTITLE_ALIGNMENT", 2, minimum=1),
+    "narration_gain_db": env_float("NARRATION_GAIN_DB", 0.0),
     "subtitle_max_chars": env_int("SUBTITLE_MAX_CHARS", 20, minimum=6),
     "subtitle_max_lines": env_int("SUBTITLE_MAX_LINES", 2, minimum=1),
     "subtitle_play_res_x": env_int("SUBTITLE_PLAY_RES_X", 1280, minimum=1),
