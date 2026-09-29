@@ -94,6 +94,8 @@ CONFIG = {
     "source_subtitle_mask_timing": os.environ.get("SOURCE_SUBTITLE_MASK_TIMING", "narration").strip().lower(),  # all | narration；增强版默认仅解说时遮罩
     "subtitle_mask_opacity": min(1.0, env_float("SUBTITLE_MASK_OPACITY", 0.6, minimum=0.0)),  # 0=透明，1=全黑；增强版默认半透明
     "subtitle_mask_padding": env_int("SUBTITLE_MASK_PADDING", 4, minimum=0),
+    "source_subtitle_mask_mode": os.environ.get("SOURCE_SUBTITLE_MASK_MODE", "gaussian_blur").strip().lower(),
+    "subtitle_mask_blur_sigma": env_float("SUBTITLE_MASK_BLUR_SIGMA", 36.0, minimum=0.1),
     "subtitle_y_top": env_int("SUBTITLE_Y_TOP", -1, minimum=-1),  # 自动旋转后的显示画布坐标；top/bot 同时有效时贴合原字幕带
     "subtitle_y_bot": env_int("SUBTITLE_Y_BOT", -1, minimum=-1),
     "narration_delay_seconds": env_float("NARRATION_DELAY_SECONDS", 0.0, minimum=0.0),  # 默认严格采用 Agent 写入的 start；旧项目可显式恢复延迟

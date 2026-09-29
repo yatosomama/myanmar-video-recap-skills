@@ -12,8 +12,8 @@ description: >
 ## 1. 定位
 
 本技能读取带时间戳的旁白稿，为每一段生成独立音频，并把语音适配到对应时间窗，随后记录下游合成所需的放置元数据。
-默认引擎是 Edge TTS 的缅甸语男声（`my-MM-ThihaNeural`），无需 API key，但需要联网。可用 `EDGE_TTS_VOICE=my-MM-NilarNeural` 切为缅甸语女声。其他既有供应商仍可显式选择。
-首次使用需安装命令：`python -m pip install edge-tts`。若 `edge-tts` 不在 `PATH` 中，可设置 `EDGE_TTS_BIN` 为可执行文件的完整路径。
+默认引擎是 Edge TTS 的缅甸语男声（`my-MM-ThihaNeural`），无需 API key，但需要联网。可用 `EDGE_TTS_VOICE=my-MM-NilarNeural` 切为缅甸语女声。Edge TTS 同时保存服务端逐词 WordBoundary sidecar，供最终缅甸语字幕逐句同步；旧音频缓存缺少 sidecar 时会自动重新合成。其他既有供应商仍可显式选择，但其字幕时间会在 QC 中标为估算。
+首次使用需在 Skill 使用的 Python 环境安装：`python -m pip install edge-tts`。该 Python 包负责生成音频和逐词时间边界，必须使用同一个环境运行语音合成脚本。
 
 ## 2. 环境要求
 

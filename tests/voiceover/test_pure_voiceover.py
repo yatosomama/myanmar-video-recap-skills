@@ -5,11 +5,19 @@ from pathlib import Path
 from subprocess import CompletedProcess
 
 import pytest
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'skills' / 'video-voiceover' / 'scripts'))
 from lib import CONFIG, env_float
 import voiceover
+import providers.edge_tts as edge_tts_provider
 from voiceover import _build_tts_segment_result, _parse_rate_offset, _run_tts_engine, _synthesize_segment, _tts_mimo, resolve_tts_engine, synthesize_tts
+
+
+@pytest.fixture(autouse=True)
+def _mimo_compatibility_provider(monkeypatch):
+    """Keep legacy MiMo tests independent from the product's default Edge TTS provider."""
+    monkeypatch.setitem(CONFIG, "tts_provider", "auto")
 
 
 def _mimo_audio(data):
@@ -370,6 +378,63 @@ def test_resolve_tts_engine_requires_mimo_key(monkeypatch):
     monkeypatch.setitem(CONFIG, "mimo_tts_api_key", "")
     with pytest.raises(RuntimeError, match="没有可用的 TTS 引擎|MiMo"):
         resolve_tts_engine()
+
+
+def test_edge_tts_voice_metadata_uses_configured_voice(monkeypatch):
+    monkeypatch.setenv("EDGE_TTS_VOICE", "my-MM-NilarNeural")
+    CONFIG["tts_provider"] = "edge-tts"
+
+    voice = voiceover._voice_record("edge-tts")
+
+    assert voice == {
+        "provider": "edge-tts",
+        "model": "edge-tts",
+        "voice_id": "my-MM-NilarNeural",
+        "reference": None,
+    }
+
+
+def test_edge_tts_writes_word_boundary_sidecar(monkeypatch, tmp_path):
+    calls = {}
+
+    class FakeCommunicate:
+        def __init__(self, text, voice, **kwargs):
+            calls.update({"text": text, "voice": voice, **kwargs})
+
+        async def stream(self):
+            yield {"type": "audio", "data": b"mp3"}
+            yield {"type": "WordBoundary", "offset": 1000000, "duration": 2000000}
+
+    class FakeSubMaker:
+        def feed(self, chunk):
+            calls["received_boundary"] = chunk["type"]
+
+        def get_srt(self):
+            return "1\n00:00:00,100 --> 00:00:00,300\nမင်္ဂလာပါ\n"
+
+    monkeypatch.setenv("EDGE_TTS_VOICE", "my-MM-NilarNeural")
+    monkeypatch.setitem(
+        sys.modules,
+        "edge_tts",
+        SimpleNamespace(Communicate=FakeCommunicate, SubMaker=FakeSubMaker),
+    )
+
+    def fake_run_cmd(cmd):
+        Path(cmd[-1]).write_bytes(b"RIFF" + b"\0" * 48)
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr(edge_tts_provider, "run_cmd", fake_run_cmd)
+    output = tmp_path / "narr_000.wav"
+
+    receipt = edge_tts_provider.synthesize_edge_tts("မင်္ဂလာပါ", output)
+
+    assert calls["boundary"] == "WordBoundary"
+    assert calls["received_boundary"] == "WordBoundary"
+    assert calls["voice"] == "my-MM-NilarNeural"
+    assert output.read_bytes().startswith(b"RIFF")
+    timing = Path(receipt["subtitle_timing_path"])
+    assert timing.read_text(encoding="utf-8").endswith("မင်္ဂလာပါ\n")
+    assert receipt["subtitle_timing_kind"] == "word-boundaries"
 
 
 def test_cache_provider_resolution_does_not_require_live_key(monkeypatch):

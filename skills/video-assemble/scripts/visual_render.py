@@ -94,6 +94,7 @@ def _subtitle_layout_qc(entries, style, safe_area=None):
             "band_height": round(band_h, 2),
             "overflow": bool(overflow_reasons),
             "overflow_reasons": overflow_reasons,
+            **({"timing_source": entry["timing_source"]} if entry.get("timing_source") else {}),
         }
         entry_facts.append(fact)
         if line_count > 1:
@@ -274,10 +275,29 @@ def _build_visual_qc(tts_segments, work_dir, video_duration, canvas, *, overlay_
         entries, style, safe_area=_measured_subtitle_safe_area(style, canvas)
     )
     mask = _source_subtitle_mask_policy(work_dir)
+    narration_entries = [entry for entry in entries if entry.get("timing_source")]
+    timing_sources = sorted({entry["timing_source"] for entry in narration_entries})
+    edge_timing_expected = any(
+        (segment.get("provider_receipt") or {}).get("provider") == "edge-tts"
+        and float(segment.get("actual_place_end") or 0)
+        > float(segment.get("actual_place_start") or 0)
+        for segment in tts_segments
+    )
     mask.update({
         "ratio": min(0.5, CONFIG["source_subtitle_mask_ratio"]) if mask["active"] else None,
-        "filter": "drawbox" if mask_filter else None,
-        "opacity": CONFIG["subtitle_mask_opacity"],
+        "filter": (
+            mask_filter.get("filter") if isinstance(mask_filter, dict)
+            else "drawbox" if mask_filter else None
+        ),
+        "band": mask_filter.get("band") if isinstance(mask_filter, dict) else None,
+        "mode": CONFIG["source_subtitle_mask_mode"] if mask_filter else None,
+        "blur_sigma": (
+            mask_filter.get("sigma") if isinstance(mask_filter, dict) else None
+        ),
+        "opacity": (
+            CONFIG["subtitle_mask_opacity"]
+            if mask_filter and not isinstance(mask_filter, dict) else None
+        ),
         "timing": CONFIG["source_subtitle_mask_timing"],
         "subtitle_y_top": CONFIG["subtitle_y_top"],
         "subtitle_y_bot": CONFIG["subtitle_y_bot"],
@@ -293,6 +313,9 @@ def _build_visual_qc(tts_segments, work_dir, video_duration, canvas, *, overlay_
         blocking_codes.append("unsupported_visual_overlay")
     if overlay_qc["overflow"]:
         blocking_codes.append("visual_overlay_overflow")
+    estimated_sources = {"character_estimate", "edge_sentence_window"}
+    if edge_timing_expected and estimated_sources.intersection(timing_sources):
+        blocking_codes.append("subtitle_timing_unaligned")
     return {
         "schema_version": 1,
         "artifact": VISUAL_QC,
@@ -318,6 +341,10 @@ def _build_visual_qc(tts_segments, work_dir, video_duration, canvas, *, overlay_
         "overlays": overlay_qc,
         "summary": {
             "subtitle_entries": subtitle_layout["entries"],
+            "subtitle_timing_sources": timing_sources,
+            "subtitle_timing_estimated": bool(
+                {"character_estimate", "edge_sentence_window"}.intersection(timing_sources)
+            ),
             "subtitle_overflow": subtitle_layout["overflow"],
             "subtitle_multi_line": subtitle_layout["multi_line"],
             "mask_policy": mask["policy"],
@@ -381,16 +408,16 @@ def _output_downscale_filter(max_h):
 
 
 def _source_subtitle_mask_filter(canvas, work_dir, tts_segments, video_duration):
-    """Return source-subtitle drawbox filters, optionally scoped to narration windows.
-
-    Many source videos (e.g. 庆余年) ship hardcoded subtitles; without this the recap
-    shows the original subs AND our narration subs stacked. Once masking is explicitly enabled,
-    the enhanced default is a measured, translucent narration-only band; opacity and timing
-    remain configurable.
-    """
+    """Build a local Gaussian-blur graph for source subtitles, or a legacy solid mask."""
     policy = _source_subtitle_mask_policy(work_dir)
     if not policy["active"]:
         return None
+    mode = CONFIG["source_subtitle_mask_mode"]
+    if mode not in {"gaussian_blur", "gblur", "drawbox", "solid"}:
+        raise ValueError(
+            "SOURCE_SUBTITLE_MASK_MODE 必须是 gaussian_blur 或 drawbox，"
+            f"当前为 {mode!r}"
+        )
     opacity = CONFIG["subtitle_mask_opacity"]
     timing = CONFIG["source_subtitle_mask_timing"]
     if timing not in {"all", "narration"}:
@@ -403,6 +430,8 @@ def _source_subtitle_mask_filter(canvas, work_dir, tts_segments, video_duration)
         mask_top = max(0, y_top - padding)
         mask_bot = min(canvas["height"], y_bot + padding)
         geometry = f"x=0:y={mask_top}:w=iw:h={mask_bot - mask_top}"
+        blur_top = mask_top
+        blur_height = mask_bot - mask_top
     else:
         # Our subtitle cues are one line. Keep the mask large enough for that line and its
         # margin, but never regress to the old two-line bar that hid ~23% of the image.
@@ -413,6 +442,60 @@ def _source_subtitle_mask_filter(canvas, work_dir, tts_segments, video_duration)
         sub_band = (float(style["margin_v"]) + line_h + pad) / play_res_y
         ratio = min(0.5, max(CONFIG["source_subtitle_mask_ratio"], sub_band))
         geometry = f"x=0:y=ih-ih*{ratio:.3f}:w=iw:h=ih*{ratio:.3f}"
+        blur_height = max(1, round(canvas["height"] * ratio))
+        blur_top = canvas["height"] - blur_height
+
+    if mode in {"gaussian_blur", "gblur"}:
+        sigma = CONFIG["subtitle_mask_blur_sigma"] * canvas["height"] / 1080.0
+        windows = []
+        if timing == "narration":
+            windows = [
+                (start, end)
+                for start, end in map(_seg_place_window, tts_segments)
+                if end > start
+            ]
+        enable = ""
+        if timing == "narration":
+            if not windows:
+                return None
+            enable = ":enable='" + "+".join(
+                f"between(t,{start:.3f},{end:.3f})" for start, end in windows
+            ) + "'"
+
+        graph = (
+            "[in]split=2[source_mask_base][source_mask_crop];"
+            f"[source_mask_crop]crop=iw:{blur_height}:0:{blur_top},"
+            f"gblur=sigma={sigma:.3f}:steps=2[source_subtitle_blur];"
+            "[source_mask_base][source_subtitle_blur]"
+            f"overlay=x=0:y={blur_top}{enable}[source_masked]"
+        )
+        current_label = "source_masked"
+        replacement_windows = []
+        if not (timing == "all"):
+            replacement_windows = [
+                (entry["start"], entry["end"])
+                for entry in _original_gap_subtitle_entries(tts_segments, work_dir, video_duration)
+            ]
+        for index, (start, end, _level) in enumerate(
+            coalesce_duck_windows(
+                [(start, end, 0.0) for start, end in replacement_windows], bridge=0.001
+            )
+        ):
+            next_label = f"source_mask_replaced_{index}"
+            graph += (
+                f";[{current_label}]drawbox={geometry}:color=black@1.00:t=fill:"
+                f"enable='between(t,{start:.3f},{end:.3f})'[{next_label}]"
+            )
+            current_label = next_label
+        return {
+            "filter": "gblur",
+            "mode": "gaussian_blur",
+            "sigma": round(sigma, 3),
+            "graph": graph,
+            "output_label": current_label,
+            "band": {"top": blur_top, "height": blur_height},
+            "timing": timing,
+        }
 
     base = f"drawbox={geometry}:color=black@{opacity:.2f}:t=fill"
     filters = []

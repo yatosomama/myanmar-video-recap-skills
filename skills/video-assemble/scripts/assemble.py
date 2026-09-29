@@ -322,7 +322,8 @@ def assemble_video(input_video, tts_segments, work_dir, output_path, *,
     preset = lib.CONFIG["output_preset"]
     max_h = lib.CONFIG["output_max_height"]
     vf_chain = []
-    if mask_filter:
+    source_mask_graph = mask_filter if isinstance(mask_filter, dict) else None
+    if mask_filter and source_mask_graph is None:
         vf_chain.append(mask_filter)
     vf_chain.extend(overlay_filters)
     if burn_subtitles:
@@ -337,14 +338,17 @@ def assemble_video(input_video, tts_segments, work_dir, output_path, *,
     # needs EVEN width AND height, so normalize odd dims (4:2:2/4:4:4 permit them) before the
     # encode — otherwise libx264 aborts to a 0-byte file. The downscale helper already evens out.
     even = "scale=trunc(iw/2)*2:trunc(ih/2)*2"
-    reencode = bool(vf_chain or packaging_layers) or lib.CONFIG["force_video_reencode"]
+    reencode = bool(vf_chain or packaging_layers or source_mask_graph) or lib.CONFIG["force_video_reencode"]
     notes = []
     video_filter_script = None
-    if vf_chain or packaging_layers:
+    if vf_chain or packaging_layers or source_mask_graph:
         if max_h <= 0:  # no downscale in the chain to force even dims
             vf_chain.append(even)
         video_filter = packaging.compose_video_filter(
-            vf_chain, packaging_layers, mask_first=bool(mask_filter)
+            vf_chain,
+            packaging_layers,
+            mask_first=bool(mask_filter),
+            source_mask=source_mask_graph,
         )
         if len(video_filter.encode("utf-8")) > constants.FILTER_SCRIPT_THRESHOLD_BYTES:
             video_filter_script = Path(work_dir) / ".video_filter.txt"

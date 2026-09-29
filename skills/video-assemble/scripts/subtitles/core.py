@@ -2,7 +2,9 @@
 
 import os
 import re
+import unicodedata
 from decimal import Decimal
+from pathlib import Path
 
 from lib import CONFIG
 from assemble_constants import (
@@ -201,8 +203,182 @@ def _subtitle_display_text(text):
 
 
 def _subtitle_chunk_weight(text):
-    """Weight raw subtitle chunks for timing, independent of display punctuation cleanup."""
-    return max(1, len(re.sub(r"\s+", "", text)))
+    """Weight spoken text without counting Burmese combining marks as extra syllables."""
+    weight = 0.0
+    for char in text:
+        category = unicodedata.category(char)
+        if char.isspace():
+            continue
+        if category.startswith("M") or category.startswith("C"):
+            continue
+        weight += 1.0
+    return max(1.0, weight)
+
+
+def _split_subtitle_sentences(text):
+    """Split source text at sentence endings used by Burmese and common languages."""
+    text = text.strip()
+    if not text:
+        return []
+    endings = "။。！？!?"
+    sentences, start = [], 0
+    for index, char in enumerate(text):
+        if char not in endings:
+            continue
+        end = index + 1
+        while end < len(text) and text[end] in _SUBTITLE_CLOSING_QUOTES:
+            end += 1
+        sentence = text[start:end].strip()
+        if sentence:
+            sentences.append(sentence)
+        start = end
+    tail = text[start:].strip()
+    if tail:
+        sentences.append(tail)
+    return sentences
+
+
+def _read_edge_word_boundaries(seg):
+    """Read Edge TTS WordBoundary sidecar cues in source-audio seconds."""
+    receipt = seg.get("provider_receipt") or {}
+    path_value = receipt.get("subtitle_timing_path")
+    if not path_value:
+        return None
+    path = Path(path_value)
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeError):
+        return None
+    time_pattern = re.compile(
+        r"^(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})\s+-->\s+"
+        r"(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})$"
+    )
+    cues = []
+    for block in re.split(r"\r?\n\s*\r?\n", text.strip()):
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        timing_index = next(
+            (i for i, line in enumerate(lines) if time_pattern.match(line)), None
+        )
+        if timing_index is None:
+            continue
+        match = time_pattern.match(lines[timing_index])
+        values = [int(value) for value in match.groups()]
+        start = ((values[0] * 60 + values[1]) * 60 + values[2]) + values[3] / 1000
+        end = ((values[4] * 60 + values[5]) * 60 + values[6]) + values[7] / 1000
+        cue_text = "".join(lines[timing_index + 1:]).strip()
+        if cue_text and 0 <= start < end:
+            cues.append({"start": start, "end": end, "text": cue_text})
+    return cues or None
+
+
+def _normalize_timing_match_text(text):
+    """Remove visual punctuation/spacing for matching Edge boundary text to approved text."""
+    return "".join(
+        char.casefold()
+        for char in unicodedata.normalize("NFKC", text)
+        if not unicodedata.category(char).startswith(("P", "Z", "C"))
+    )
+
+
+def _edge_aligned_entries(seg, max_chars):
+    """Group Edge word-boundary cues into approved sentences and readable caption lines."""
+    cues = _read_edge_word_boundaries(seg)
+    if not cues:
+        return None
+    sentences = _split_subtitle_sentences(seg["spoken_text"])
+    sentence_cues = []
+    cue_index = 0
+    for sentence in sentences:
+        target = _normalize_timing_match_text(sentence)
+        matched = []
+        collected_text = ""
+        while cue_index < len(cues):
+            cue = cues[cue_index]
+            piece = _normalize_timing_match_text(cue["text"])
+            if not piece:
+                matched.append(cue)
+                cue_index += 1
+                continue
+            candidate = collected_text + piece
+            if not target.startswith(candidate):
+                return None
+            matched.append(cue)
+            cue_index += 1
+            collected_text = candidate
+            if collected_text == target:
+                break
+        if not matched or collected_text != target:
+            return None
+        sentence_cues.append({
+            "start": min(cue["start"] for cue in matched),
+            "end": max(cue["end"] for cue in matched),
+            "cues": matched,
+        })
+    if cue_index != len(cues):
+        return None
+
+    source_duration = float(seg.get("source_audio_duration") or seg.get("audio_duration") or 0)
+    placed_duration = float(seg.get("placed_audio_duration") or 0)
+    if source_duration <= 0 or placed_duration <= 0:
+        return None
+    scale = placed_duration / source_duration
+    placement_start = float(seg["actual_place_start"])
+    placement_end = float(seg["actual_place_end"])
+    entries = []
+    for sentence, cue in zip(sentences, sentence_cues):
+        start = min(placement_end, placement_start + cue["start"] * scale)
+        end = min(placement_end, placement_start + cue["end"] * scale)
+        if end <= start:
+            return None
+        chunks = _subtitle_entry_chunks(_split_subtitle_chunks(sentence, max_chars))
+        chunk_cues = []
+        word_index = 0
+        for chunk in chunks:
+            target = _normalize_timing_match_text(chunk["raw"])
+            collected = ""
+            matched = []
+            while word_index < len(cue["cues"]):
+                word = cue["cues"][word_index]
+                piece = _normalize_timing_match_text(word["text"])
+                if not piece:
+                    matched.append(word)
+                    word_index += 1
+                    continue
+                candidate = collected + piece
+                if not target.startswith(candidate):
+                    matched = []
+                    break
+                matched.append(word)
+                word_index += 1
+                collected = candidate
+                if collected == target:
+                    break
+            if not matched or collected != target:
+                chunk_cues = []
+                break
+            chunk_cues.append(matched)
+
+        if chunk_cues and word_index == len(cue["cues"]):
+            for chunk, matched in zip(chunks, chunk_cues):
+                cue_start = min(item["start"] for item in matched)
+                cue_end = max(item["end"] for item in matched)
+                entry_start = min(placement_end, placement_start + cue_start * scale)
+                entry_end = min(placement_end, placement_start + cue_end * scale)
+                if entry_end <= entry_start:
+                    return None
+                entries.append({
+                    "start": entry_start,
+                    "end": entry_end,
+                    "text": chunk["text"],
+                    "timing_source": "edge_word_boundaries",
+                })
+        else:
+            for entry in _distribute_chunks(
+                [chunk["raw"] for chunk in chunks], start, end
+            ):
+                entry["timing_source"] = "edge_sentence_window"
+                entries.append(entry)
+    return entries or None
 
 
 def _subtitle_entry_chunks(raw_chunks):
@@ -244,7 +420,7 @@ def _split_subtitle_chunks(text, max_chars):
     text = text.strip()
     if not text:
         return []
-    breakers = "，。！？、；：…—,.!?;:"
+    breakers = "，。！？、；：…—,.!?;:၊။"
     clauses, buf = [], ""
     for ch in text:
         buf += ch
@@ -282,19 +458,24 @@ def _split_subtitle_chunks(text, max_chars):
 
 
 def _subtitle_entries(narration):
-    """Collect subtitle entries from final TTS segment placement.
+    """Use Edge word cues when available; mark proportional fallback timing for visual QC.
 
-    Each placed segment is split into short one-line chunks and its played window
-    [actual_place_start, actual_place_end] is distributed across them in proportion to character
-    count — karaoke-style timing that keeps each line on screen only while it is roughly being
-    spoken, instead of holding a whole paragraph for the segment's full duration. Segments that
-    were not placed have a zero-width window and therefore produce no cue."""
+    Edge cues keep each displayed line aligned to its spoken words. Other providers and unmatched
+    Edge text fall back to Burmese-aware sentence windows and character weighting. Unplaced
+    segments have a zero-width window and produce no cue."""
     max_chars = CONFIG["subtitle_max_chars"]
     entries = []
     for seg in narration:
+        aligned = _edge_aligned_entries(seg, max_chars)
+        if aligned is not None:
+            entries.extend(aligned)
+            continue
         text = seg["spoken_text"]
         start, end = float(seg["actual_place_start"]), float(seg["actual_place_end"])
-        entries.extend(_distribute_chunks(_split_subtitle_chunks(text, max_chars), start, end))
+        estimated = _distribute_chunks(_split_subtitle_chunks(text, max_chars), start, end)
+        for entry in estimated:
+            entry["timing_source"] = "character_estimate"
+        entries.extend(estimated)
     return entries
 
 

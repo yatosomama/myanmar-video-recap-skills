@@ -198,6 +198,7 @@ def _build_tts_segment_result(index, seg, text, output_wav, duration, rate_offse
         "fit_status": "pending_assembly",
         "audio_path": str(output_wav),
         "audio_duration": duration,
+        "source_audio_duration": duration,
         "placed_audio_duration": None,
         "actual_place_start": None,
         "actual_place_end": None,
@@ -244,6 +245,9 @@ def _voice_record(engine):
     if engine == "index-tts":
         return {"provider": engine, "model": None,
                 "voice_id": settings["index_tts_voice"], "reference": None}
+    if engine == "edge-tts":
+        return {"provider": engine, "model": "edge-tts",
+                "voice_id": settings["edge_tts_voice"], "reference": None}
     reference = settings.get("voice_ref_identity")
     return {"provider": engine, "model": settings["mimo_tts_model"],
             "voice_id": None if reference else settings["mimo_tts_voice"],
@@ -417,6 +421,8 @@ def _cleanup_partial_tts_outputs(output_wav):
     for path in (
         wav_path,
         wav_path.with_suffix(".mp3"),
+        wav_path.with_suffix(".edge.mp3"),
+        wav_path.with_suffix(".edge.srt"),
         Path(str(wav_path) + ".part"),
         _tts_segment_cache_path(output_wav),
     ):
@@ -448,6 +454,11 @@ def _reuse_tts_segment_cache(index, seg, output_wav, cache_inputs, engine):
         return None
     if engine == "index-tts" and not index_provider.valid_cached_receipt(cached, CONFIG):
         return None
+    if engine == "edge-tts":
+        receipt = cached.get("provider_receipt") or {}
+        timing_path = receipt.get("subtitle_timing_path")
+        if not timing_path or not Path(timing_path).is_file():
+            return None
     # The sidecar's audio identity (size, mtime_ns) still matches the WAV that produced
     # `audio_duration`; re-probing would be one ffprobe process per segment on every rerun.
     log(f"  段 {index+1}: 复用已有 ({cached['audio_duration']:.1f}s)")
@@ -479,6 +490,9 @@ def _tts_segment_cache_inputs(engine, index, seg, source_text, rate, pitch):
         "emotion": seg.get("emotion", ""),
         "settings": tts_settings_payload(engine),
     }
+    if engine == "edge-tts":
+        # Existing cached Edge audio lacks word timings and must be regenerated once.
+        payload["subtitle_timing_schema"] = "edge-word-boundaries-v1"
     if authored_text_policy() == PRESERVE_APPROVED_TEXT_POLICY:
         payload.update({
             "authored_text_policy": PRESERVE_APPROVED_TEXT_POLICY,
@@ -503,6 +517,15 @@ def _load_tts_segment_cache(output_wav, cache_inputs):
     if not isinstance(data, dict) or "settings" not in data or "audio" not in data:
         return None
     stale = data["settings"] != cache_inputs or data["audio"] != file_identity(output_wav)
+    if cache_inputs.get("engine") == "edge-tts":
+        receipt = data.get("provider_receipt") or {}
+        timing_path = receipt.get("subtitle_timing_path")
+        timing_file = Path(timing_path) if timing_path else None
+        stale = stale or (
+            timing_file is None
+            or not timing_file.is_file()
+            or data.get("subtitle_timing") != file_identity(timing_file)
+        )
     return None if stale else data
 
 
@@ -510,6 +533,9 @@ def _write_tts_segment_cache(output_wav, cache_inputs, spoken_text, duration, ra
                              truncated=False, truncate_reason="none", norm_meta=None,
                              provider_receipt=None):
     """Persist non-secret inputs and the WAV identity for safe per-segment TTS reuse."""
+    receipt = provider_receipt or None
+    timing_path = receipt.get("subtitle_timing_path") if isinstance(receipt, dict) else None
+    timing_file = Path(timing_path) if timing_path else None
     _tts_segment_cache_path(output_wav).write_text(
         json.dumps({
             "settings": cache_inputs,
@@ -521,6 +547,10 @@ def _write_tts_segment_cache(output_wav, cache_inputs, spoken_text, duration, ra
             "truncate_reason": truncate_reason if truncated else "none",
             "normalization": norm_meta or None,
             "provider_receipt": provider_receipt,
+            "subtitle_timing": (
+                file_identity(timing_file)
+                if timing_file is not None and timing_file.is_file() else None
+            ),
         }, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )

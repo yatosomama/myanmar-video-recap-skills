@@ -1,8 +1,7 @@
-"""Free Microsoft Edge online TTS transport for Burmese narration."""
+"""Free Microsoft Edge online TTS transport and word timing for Burmese narration."""
 
+import asyncio
 import os
-import shutil
-import subprocess
 from pathlib import Path
 
 from lib import run_cmd
@@ -12,7 +11,7 @@ DEFAULT_VOICE = "my-MM-ThihaNeural"
 
 
 def synthesize_edge_tts(text, output_wav, rate="+0%", pitch="+0Hz"):
-    """Write one Burmese segment as a mono PCM WAV using the edge-tts CLI."""
+    """Write one Burmese segment as a mono PCM WAV with Edge TTS word timings."""
     voice = os.environ.get("EDGE_TTS_VOICE", DEFAULT_VOICE).strip()
     if not voice.startswith("my-MM-"):
         raise ValueError(
@@ -20,33 +19,51 @@ def synthesize_edge_tts(text, output_wav, rate="+0%", pitch="+0Hz"):
             "use my-MM-ThihaNeural or my-MM-NilarNeural"
         )
 
-    executable = os.environ.get("EDGE_TTS_BIN", "edge-tts")
-    resolved = shutil.which(executable)
-    if not resolved:
+    try:
+        import edge_tts
+    except ImportError as exc:
         raise RuntimeError(
-            "edge-tts executable was not found; install it with `python -m pip install edge-tts` "
-            "or set EDGE_TTS_BIN"
-        )
+            "This Python environment cannot import edge-tts; install it with "
+            "`python -m pip install edge-tts` so audio and word-boundary timings use the same runtime"
+        ) from exc
 
     output_wav = Path(output_wav)
     output_mp3 = output_wav.with_suffix(".edge.mp3")
-    command = [
-        resolved,
-        "--voice", voice,
-        "--rate", rate,
-        "--pitch", pitch,
-        "--text", text,
-        "--write-media", str(output_mp3),
-    ]
+    output_subtitles = output_wav.with_suffix(".edge.srt")
+    output_subtitles.unlink(missing_ok=True)
+
+    async def _write_edge_audio_and_word_boundaries():
+        communicate = edge_tts.Communicate(
+            text, voice, rate=rate, pitch=pitch, boundary="WordBoundary"
+        )
+        submaker = edge_tts.SubMaker()
+        with output_mp3.open("wb") as media_file:
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    media_file.write(chunk["data"])
+                elif chunk["type"] == "WordBoundary":
+                    submaker.feed(chunk)
+        boundaries_srt = submaker.get_srt()
+        if boundaries_srt.strip():
+            output_subtitles.write_text(boundaries_srt, encoding="utf-8")
+
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=180)
-    except subprocess.TimeoutExpired as exc:
+        asyncio.run(asyncio.wait_for(_write_edge_audio_and_word_boundaries(), timeout=180))
+    except TimeoutError as exc:
         output_mp3.unlink(missing_ok=True)
+        output_subtitles.unlink(missing_ok=True)
         raise RuntimeError("Edge TTS timed out after 180 seconds") from exc
-    if result.returncode != 0 or not output_mp3.is_file() or output_mp3.stat().st_size == 0:
+    except Exception:
         output_mp3.unlink(missing_ok=True)
-        detail = (result.stderr or result.stdout).strip()
-        raise RuntimeError(f"Edge TTS failed: {detail or 'no audio was written'}")
+        output_subtitles.unlink(missing_ok=True)
+        raise
+    if (
+        not output_mp3.is_file() or output_mp3.stat().st_size == 0
+        or not output_subtitles.is_file() or output_subtitles.stat().st_size == 0
+    ):
+        output_mp3.unlink(missing_ok=True)
+        output_subtitles.unlink(missing_ok=True)
+        raise RuntimeError("Edge TTS returned no audio or WordBoundary cues")
 
     try:
         converted = run_cmd([
@@ -60,4 +77,16 @@ def synthesize_edge_tts(text, output_wav, rate="+0%", pitch="+0Hz"):
     finally:
         output_mp3.unlink(missing_ok=True)
 
-    return {"provider": "edge-tts", "voice": voice}
+    timing_path = (
+        str(output_subtitles.resolve())
+        if output_subtitles.is_file() and output_subtitles.stat().st_size > 0
+        else None
+    )
+    if timing_path is None:
+        raise RuntimeError("Edge TTS returned audio without sentence-boundary subtitles")
+    return {
+        "provider": "edge-tts",
+        "voice": voice,
+        "subtitle_timing_path": timing_path,
+        "subtitle_timing_kind": "word-boundaries",
+    }

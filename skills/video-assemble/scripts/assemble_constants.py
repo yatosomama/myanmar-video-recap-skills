@@ -34,7 +34,7 @@ FILTER_SCRIPT_THRESHOLD_BYTES = 8000
 # The default subtitle metrics were tuned in this reference canvas.
 SUBTITLE_STYLE_REF_W = 1280
 SUBTITLE_STYLE_REF_H = 720
-_SUBTITLE_TERMINAL_PUNCTUATION = "。！？!?…."
+_SUBTITLE_TERMINAL_PUNCTUATION = "。！？!?….။"
 _SUBTITLE_CLOSING_QUOTES = "」』”’）)]】》〉\"'"
 
 _MIN_GAP_TO_SUBTITLE = 0.8

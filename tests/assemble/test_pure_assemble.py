@@ -12,6 +12,7 @@ import importlib
 import json
 import wave
 import pytest
+import packaging as assemble_packaging
 from subprocess import CompletedProcess
 import assembly_contract
 import audio_mix
@@ -38,7 +39,10 @@ from assembly_settings import assembly_settings_payload
 from audio_mix import _build_audio_filter_complex, final_loudnorm_filter
 from media import _build_video_clips
 from subtitles.core import (
+    _read_edge_word_boundaries,
     _split_subtitle_chunks,
+    _split_subtitle_sentences,
+    _subtitle_chunk_weight,
     _subtitle_entries,
     _seconds_to_ass_time,
     _seconds_to_srt_time,
@@ -211,7 +215,17 @@ def test_adjust_tts_speed_derives_outputs_from_audio_name_only(monkeypatch, tmp_
     monkeypatch.setattr(narration_audio, "run_cmd", fake_run_cmd)
 
     adjusted, actual_dur, meta = _adjust_result_parts(
-        narration_audio._adjust_tts_speed(src, target_duration=2.0)
+        narration_audio._adjust_tts_speed(
+            src,
+            target_duration=2.0,
+            tempo_policy={
+                "global_atempo": 1.0,
+                "segment_tempo_max": 1.2,
+                "cumulative_tempo_max": 1.2,
+                "cumulative_tempo_hard_max": 1.2,
+                "bounded_segment_fit": True,
+            },
+        )
     )
 
     assert actual_dur == 2.0
@@ -488,7 +502,9 @@ def test_source_subtitle_mask_filter_toggles_with_effective_burn_policy(monkeypa
 
     monkeypatch.setitem(CONFIG, "burn_subtitles", True)
     f = _source_subtitle_mask_filter(canvas, Path.cwd(), [], 1.0)
-    assert f is not None and f.startswith("drawbox=") and "t=fill" in f
+    assert f["filter"] == "gblur"
+    assert "gblur=sigma=" in f["graph"]
+    assert "split=2" in f["graph"]
 
     monkeypatch.setitem(
         CONFIG, "source_subtitle_mask_ratio", 0.0
@@ -496,11 +512,53 @@ def test_source_subtitle_mask_filter_toggles_with_effective_burn_policy(monkeypa
     assert _source_subtitle_mask_filter(canvas, Path.cwd(), [], 1.0) is not None
 
 
+def test_gaussian_source_mask_is_local_and_composes_before_recap_subtitles(monkeypatch):
+    monkeypatch.setitem(CONFIG, "burn_subtitles", True)
+    monkeypatch.setitem(CONFIG, "mask_source_subtitles", True)
+    monkeypatch.setitem(CONFIG, "source_subtitle_mask_policy", "opt_in")
+    monkeypatch.setitem(CONFIG, "source_subtitle_mask_policy_declared", True)
+    monkeypatch.setitem(CONFIG, "source_subtitle_mask_mode", "gaussian_blur")
+    monkeypatch.setitem(CONFIG, "source_subtitle_mask_timing", "narration")
+    monkeypatch.setitem(CONFIG, "subtitle_y_top", 610)
+    monkeypatch.setitem(CONFIG, "subtitle_y_bot", 660)
+
+    mask = _source_subtitle_mask_filter(
+        _canvas(), Path.cwd(),
+        [{"actual_place_start": 1.25, "actual_place_end": 2.5}], 3.0,
+    )
+    graph = assemble_packaging.compose_video_filter(
+        ["subtitles=filename='recap.ass'"], [], mask_first=True, source_mask=mask
+    )
+
+    assert mask["filter"] == "gblur"
+    assert mask["sigma"] == pytest.approx(24.0)
+    assert mask["band"] == {"top": 606, "height": 58}
+    assert "enable='between(t,1.250,2.500)'" in mask["graph"]
+    assert "gblur=sigma=" in graph
+    assert graph.endswith("[out]")
+    assert graph.index("gblur=") < graph.index("subtitles=")
+
+    qc = visual_render._build_visual_qc(
+        [{
+            "spoken_text": "同步检查。",
+            "actual_place_start": 1.25,
+            "actual_place_end": 2.5,
+        }],
+        Path.cwd(),
+        3.0,
+        _canvas(),
+        mask_filter=mask,
+    )
+    assert qc["mask"]["filter"] == "gblur"
+    assert qc["mask"]["band"] == mask["band"]
+
+
 def test_source_subtitle_mask_can_restore_opaque_full_timeline_mode(monkeypatch):
     """The enhanced default stays reversible for projects that need the old mask look."""
     monkeypatch.setitem(CONFIG, "burn_subtitles", True)
     monkeypatch.setitem(CONFIG, "mask_source_subtitles", True)
     monkeypatch.setitem(CONFIG, "source_subtitle_mask_policy", "opt_in")
+    monkeypatch.setitem(CONFIG, "source_subtitle_mask_mode", "drawbox")
     monkeypatch.setitem(CONFIG, "subtitle_mask_opacity", 1.0)
     monkeypatch.setitem(CONFIG, "source_subtitle_mask_timing", "all")
 
@@ -517,6 +575,7 @@ def test_source_subtitle_mask_can_follow_custom_band_and_narration_windows(monke
     monkeypatch.setitem(CONFIG, "burn_subtitles", True)
     monkeypatch.setitem(CONFIG, "mask_source_subtitles", True)
     monkeypatch.setitem(CONFIG, "source_subtitle_mask_policy", "opt_in")
+    monkeypatch.setitem(CONFIG, "source_subtitle_mask_mode", "drawbox")
     monkeypatch.setitem(CONFIG, "subtitle_y_top", 610)
     monkeypatch.setitem(CONFIG, "subtitle_y_bot", 660)
     monkeypatch.setitem(CONFIG, "subtitle_mask_padding", 4)
@@ -545,6 +604,7 @@ def test_source_subtitle_mask_opaquely_covers_byo_gap_subtitles(
     monkeypatch.setitem(CONFIG, "burn_subtitles", True)
     monkeypatch.setitem(CONFIG, "mask_source_subtitles", True)
     monkeypatch.setitem(CONFIG, "source_subtitle_mask_policy", "opt_in")
+    monkeypatch.setitem(CONFIG, "source_subtitle_mask_mode", "drawbox")
     monkeypatch.setitem(CONFIG, "subtitle_y_top", 610)
     monkeypatch.setitem(CONFIG, "subtitle_y_bot", 660)
     monkeypatch.setitem(CONFIG, "subtitle_mask_opacity", configured_opacity)
@@ -573,6 +633,7 @@ def test_source_subtitle_mask_coalesces_overlaps_to_avoid_double_opacity(monkeyp
     monkeypatch.setitem(CONFIG, "burn_subtitles", True)
     monkeypatch.setitem(CONFIG, "mask_source_subtitles", True)
     monkeypatch.setitem(CONFIG, "source_subtitle_mask_policy", "opt_in")
+    monkeypatch.setitem(CONFIG, "source_subtitle_mask_mode", "drawbox")
     monkeypatch.setitem(CONFIG, "source_subtitle_mask_timing", "narration")
 
     filt = _source_subtitle_mask_filter(
@@ -626,7 +687,7 @@ def test_generate_ass_places_subtitle_bottom_on_measured_y(monkeypatch, tmp_path
         (
             {"subtitle_y_top": 610, "subtitle_y_bot": 650, "subtitle_alignment": 8},
             None,
-            "bottom-aligned",
+                "bottom alignment",
         ),
         (
             {"subtitle_y_top": 300, "subtitle_y_bot": 340},
@@ -663,14 +724,8 @@ def test_mask_band_stays_one_line_small_when_burning(monkeypatch):
     monkeypatch.setitem(CONFIG, "subtitle_play_res_y", 720)
     monkeypatch.setitem(CONFIG, "burn_subtitles", True)
     monkeypatch.setitem(CONFIG, "source_subtitle_mask_timing", "all")
-    import re
-
-    ratio_on = float(
-        re.search(
-            r"ih-ih\*([0-9.]+)",
-            _source_subtitle_mask_filter(_canvas(), Path.cwd(), [], 1.0),
-        ).group(1)
-    )
+    mask = _source_subtitle_mask_filter(_canvas(), Path.cwd(), [], 1.0)
+    ratio_on = mask["band"]["height"] / _canvas()["height"]
     one_line = (30 + 42 * 1.25 + 10) / 720
     assert ratio_on == pytest.approx(max(0.14, one_line), abs=0.005), ratio_on
     assert ratio_on < 0.16, ratio_on  # stays small — never the old ~0.23 two-line band
@@ -1023,7 +1078,8 @@ def test_assemble_video_uses_filter_script_for_long_timed_mask(
     ffmpeg_cmd = commands[-1]
     assert script_option in ffmpeg_cmd
     assert "-vf" not in ffmpeg_cmd
-    assert video_filter_scripts[0][1].count("drawbox=") == 375
+    assert video_filter_scripts[0][1].count("gblur=") == 1
+    assert video_filter_scripts[0][1].count("between(t,") == 375
     assert len(" ".join(map(str, ffmpeg_cmd))) < 32767
     assert not video_filter_scripts[0][0].exists()
     # The 375-segment narration mix is long too: its graph is read from a file as well.
@@ -1632,6 +1688,45 @@ def test_subtitle_entries_distribute_block_window_across_chunks():
     assert all(
         not e["text"].endswith(("。", "！", "？", "!", "?", "…")) for e in entries
     )
+
+
+def test_edge_word_boundaries_end_burmese_captions_with_spoken_sentences(tmp_path):
+    timing = tmp_path / "narr.edge.srt"
+    timing.write_text(
+        "1\n00:00:00,000 --> 00:00:00,200\nပထမ\n\n"
+        "2\n00:00:00,200 --> 00:00:00,800\nဝါကျ။\n\n"
+        "3\n00:00:01,100 --> 00:00:01,400\nဒုတိယ\n\n"
+        "4\n00:00:01,400 --> 00:00:02,000\nဝါကျ။\n",
+        encoding="utf-8",
+    )
+    entries = _subtitle_entries(
+        [{
+            "spoken_text": "ပထမဝါကျ။ဒုတိယဝါကျ။",
+            "actual_place_start": 10.0,
+            "actual_place_end": 12.0,
+            "source_audio_duration": 4.0,
+            "placed_audio_duration": 2.0,
+            "provider_receipt": {"subtitle_timing_path": str(timing)},
+        }]
+    )
+
+    assert [entry["timing_source"] for entry in entries] == [
+        "edge_word_boundaries", "edge_word_boundaries"
+    ]
+    assert entries[0]["end"] == pytest.approx(10.4)
+    assert entries[1]["start"] == pytest.approx(10.55)
+    assert entries[1]["end"] == pytest.approx(11.0)
+    assert len(_read_edge_word_boundaries({"provider_receipt": {"subtitle_timing_path": str(timing)}})) == 4
+
+
+def test_burmese_subtitle_punctuation_and_combining_marks_are_language_aware():
+    assert _split_subtitle_sentences("ပထမဝါကျ။ ဒုတိယဝါကျ။") == [
+        "ပထမဝါကျ။", "ဒုတိယဝါကျ။"
+    ]
+    chunks = _split_subtitle_chunks("ပထမပိုင်း၊ ဒုတိယပိုင်း။", 8)
+    assert len(chunks) > 1
+    assert "".join(chunks) == "ပထမပိုင်း၊ဒုတိယပိုင်း။"
+    assert _subtitle_chunk_weight("က\u103e") == 1
 
 
 def test_subtitle_entries_never_drops_a_sub_threshold_chunk():
@@ -2816,6 +2911,57 @@ def test_measured_subtitle_qc_contains_normal_line_above_anchored_bottom(
     assert safe == {"x": 40, "y": 606, "width": 1200, "height": 44, "bottom_margin": 70}
     assert entry["band_height"] <= safe["height"]
     assert qc["subtitles"]["overflow"] is False
+
+
+def test_visual_qc_blocks_edge_tts_without_matched_sentence_boundaries(tmp_path):
+    qc = visual_render._build_visual_qc(
+        [{
+            "start": 0.0,
+            "end": 2.0,
+            "actual_place_start": 0.0,
+            "actual_place_end": 1.5,
+            "spoken_text": "缅甸语旁白。",
+            "provider_receipt": {"provider": "edge-tts"},
+        }],
+        tmp_path,
+        2.0,
+        _canvas(),
+    )
+
+    assert qc["subtitles"]["entry_facts"][0]["timing_source"] == "character_estimate"
+    assert qc["summary"]["subtitle_timing_estimated"] is True
+    assert "subtitle_timing_unaligned" in qc["blocking_codes"]
+
+
+def test_visual_qc_blocks_edge_tts_when_word_cues_cannot_time_caption_lines(monkeypatch, tmp_path):
+    timing = tmp_path / "narr.edge.srt"
+    timing.write_text(
+        "1\n00:00:00,100 --> 00:00:03,900\n"
+        "ဒီနေ့သူမအိမ်ပြန်လာတဲ့အခါတံခါးပိတ်နေခဲ့တယ်။\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setitem(CONFIG, "subtitle_max_chars", 12)
+    qc = visual_render._build_visual_qc(
+        [{
+            "start": 0.0,
+            "end": 4.0,
+            "actual_place_start": 0.0,
+            "actual_place_end": 4.0,
+            "source_audio_duration": 4.0,
+            "placed_audio_duration": 4.0,
+            "spoken_text": "ဒီနေ့သူမအိမ်ပြန်လာတဲ့အခါတံခါးပိတ်နေခဲ့တယ်။",
+            "provider_receipt": {
+                "provider": "edge-tts",
+                "subtitle_timing_path": str(timing),
+            },
+        }],
+        tmp_path,
+        4.0,
+        _canvas(),
+    )
+
+    assert "edge_sentence_window" in qc["summary"]["subtitle_timing_sources"]
+    assert "subtitle_timing_unaligned" in qc["blocking_codes"]
 
 
 def test_legacy_mask_env_without_explicit_policy_is_blocking(monkeypatch):

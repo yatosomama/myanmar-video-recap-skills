@@ -49,7 +49,19 @@ def assembly_settings_payload(work_dir=None, *, audio_mode="narration", audio_st
                 CONFIG["source_subtitle_mask_timing"] if mask_source_subtitles else None
             ),
             "subtitle_mask_opacity": (
-                CONFIG["subtitle_mask_opacity"] if mask_source_subtitles else None
+                CONFIG["subtitle_mask_opacity"]
+                if mask_source_subtitles
+                and CONFIG["source_subtitle_mask_mode"] not in {"gaussian_blur", "gblur"}
+                else None
+            ),
+            "source_subtitle_mask_mode": (
+                CONFIG["source_subtitle_mask_mode"] if mask_source_subtitles else None
+            ),
+            "subtitle_mask_blur_sigma": (
+                CONFIG["subtitle_mask_blur_sigma"]
+                if mask_source_subtitles
+                and CONFIG["source_subtitle_mask_mode"] in {"gaussian_blur", "gblur"}
+                else None
             ),
             "subtitle_mask_padding": (
                 CONFIG["subtitle_mask_padding"] if mask_source_subtitles else None

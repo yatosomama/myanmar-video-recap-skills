@@ -83,7 +83,8 @@ python3 scripts/assemble.py <video> --work-dir <work_dir> \
 - 常速、倒放、变换、富文本、转场、蒙版、LUT、绿幕复合草稿及显式特效轨道通过 timeline v2 扩展表达。需要素材包的功能只接受调用方合法提供的离线资源。
 - 剪映草稿引用未烧录的源视频，因此原片硬字幕仍会保留，必要时在剪映内另行遮罩。
 - 字幕外观可用 `SUBTITLE_FONT_SIZE`、`SUBTITLE_MARGIN_V`、`SUBTITLE_MAX_CHARS` 等控制。
-- `SUBTITLE_Y_TOP/BOT` 把 ASS 基线放到测得的原片字幕区域，坐标为半开 `[top, bot)`；显式遮罩策略下默认 `SUBTITLE_MASK_OPACITY=0.6`，`SOURCE_SUBTITLE_MASK_TIMING=narration`。
+- `--subtitle-y-top` / `--subtitle-y-bot` 把 ASS 基线放到测得的原片字幕区域，坐标为半开 `[top, bot)`；两者同时提供时会显式启用原字幕遮罩，默认使用局部 Gaussian `gblur`（`SUBTITLE_MASK_BLUR_SIGMA` 默认按 1080p 高度 36 缩放），`SOURCE_SUBTITLE_MASK_TIMING=narration` 只模糊旁白窗口。原声对白窗口保持原画和原字幕。渲染后核对 `visual_qc.json` 的 active 状态、`gblur` 滤镜、字幕带和 sigma。
+- Edge TTS 的逐词 WordBoundary 用于缅甸语字幕同步，再按旁白文案的句末 `။` 聚合为完整句；句内才按阅读宽度拆行。合成 QC 会检查边界词合并后是否逐字覆盖旁白；Edge TTS 边界缺失、与文案不一致或只能估算行内时间时阻断出片。其他 provider 使用字符/组合标记感知的估算时间，并在 `visual_qc.json` 中标注。
 - 原声在旁白间隙回到 `IDLE_ORIG_VOLUME`，旁白下压到 `SPEECH_DUCKING_VOLUME`；`DUCK_FADE_SECONDS` 控制过渡。还可配置 `DUCKING_MODE`、`ZONE_DUCKING_VOLUME`、`FINAL_LOUDNORM` 与 `TARGET_LUFS`。
 - 可通过 `BGM_PATH` 指定 BGM；它会循环到成片长度，并按 `BGM_VOLUME` / `BGM_DUCKING_VOLUME` 混音。不要在没有创作依据时设置通用 BGM。
 - 烧录字幕需要带 `subtitles` / libass 的 ffmpeg；合成阶段会预检并在缺失时明确失败。

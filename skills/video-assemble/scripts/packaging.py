@@ -55,30 +55,39 @@ def _image_size(image):
         raise RuntimeError(f"无法读取包装图层尺寸: {image}") from None
 
 
-def compose_video_filter(chain, layers, *, mask_first):
+def compose_video_filter(chain, layers, *, mask_first, source_mask=None):
     """Join the existing filter chain, inserting packaging layers after the source mask.
 
     Order: source-subtitle mask → packaging layers → text overlays / burned subtitles →
     scaling. Without layers this is the plain comma-joined chain.
     """
-    if not layers:
+    if not layers and source_mask is None:
         return ",".join(chain)
-    head, tail = (chain[:1], chain[1:]) if mask_first else ([], list(chain))
+    if source_mask is not None:
+        head, tail = [], list(chain)
+    else:
+        head, tail = (chain[:1], chain[1:]) if mask_first else ([], list(chain))
     graph = [
         f"movie=filename='{_escape_subtitle_filter_path(layer['path'])}',"
         f"scale={layer['rect']['width']}:{layer['rect']['height']},format=rgba[pk{i}]"
         for i, layer in enumerate(layers)
     ]
-    current = "in"
-    if head:
+    current = source_mask["output_label"] if source_mask is not None else "in"
+    if source_mask is not None:
+        graph.insert(0, source_mask["graph"])
+    elif head:
         graph.append(f"[in]{head[0]}[pm]")
         current = "pm"
     for i, layer in enumerate(layers):
-        out = "out" if i == len(layers) - 1 and not tail else f"po{i}"
+        out = "out" if i == len(layers) - 1 and not tail and source_mask is None else f"po{i}"
         graph.append(f"[{current}][pk{i}]overlay=x={layer['rect']['x']}:y={layer['rect']['y']}[{out}]")
         current = out
     if tail:
         graph.append(f"[{current}]{','.join(tail)}[out]")
+    elif source_mask is not None and not layers:
+        graph.append(f"[{current}]null[out]")
+    elif source_mask is not None:
+        graph.append(f"[{current}]null[out]")
     return ";".join(graph)
 
 
