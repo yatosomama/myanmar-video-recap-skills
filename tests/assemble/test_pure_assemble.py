@@ -1747,6 +1747,55 @@ def test_foreign_source_audio_mutes_original_under_narration(monkeypatch):
         importlib.reload(_lib)  # restore default CONFIG for any later tests
 
 
+def test_protected_original_dialogue_is_a_source_handoff_and_bridge_barrier(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setitem(CONFIG, "duck_fade_seconds", 0.3)
+    monkeypatch.setitem(CONFIG, "duck_bridge_seconds", 1.5)
+    (tmp_path / "original_subtitles.json").write_text(
+        json.dumps([{"start": 3.6, "end": 4.1, "text": "关键原声对白"}]),
+        encoding="utf-8",
+    )
+    segs = [
+        {"actual_place_start": 2.0, "actual_place_end": 3.0,
+         "overlaps_speech": True},
+        {"actual_place_start": 4.6, "actual_place_end": 5.4,
+         "overlaps_speech": True},
+    ]
+
+    handoffs = audio_mix._apply_source_sentence_handoffs(segs, tmp_path, 8.0)
+    audio_mix._validate_protected_dialogue_plan(
+        segs, audio_mix._load_protected_dialogue_plan(tmp_path, required=True,
+                                                       video_duration=8.0), 8.0
+    )
+    expr = audio_mix._duck_envelope(
+        segs, 1.0, 0.0, 0.0, 0.3, 1.5, barriers=[(3.48, 4.22)]
+    )
+    bridged_expr = audio_mix._duck_envelope(segs, 1.0, 0.0, 0.0, 0.3, 1.5)
+
+    assert handoffs[0]["status"] == "protected_dialogue"
+    assert segs[0]["source_restore_at"] == pytest.approx(3.48)
+    # The short dialogue is under the ordinary 1.5s bridge. It must split the duck windows,
+    # or the next narration beat would keep the original dialogue muted.
+    assert expr.count("+(") == 2
+    assert bridged_expr.count("+(") == 1
+
+
+def test_protected_original_dialogue_conflict_blocks_audio_plan(tmp_path):
+    dialogue = [{"start": 2.5, "end": 3.5, "text": "必须保留的原声"}]
+    segs = [{"actual_place_start": 2.0, "actual_place_end": 3.0}]
+
+    with pytest.raises(RuntimeError, match="冲突"):
+        audio_mix._validate_protected_dialogue_plan(segs, dialogue, 5.0)
+
+
+def test_required_original_dialogue_plan_needs_explicit_empty_array(tmp_path):
+    with pytest.raises(RuntimeError, match="original_subtitles.json"):
+        audio_mix._load_protected_dialogue_plan(tmp_path, required=True)
+    (tmp_path / "original_subtitles.json").write_text("[]", encoding="utf-8")
+    assert audio_mix._load_protected_dialogue_plan(tmp_path, required=True) == []
+
+
 def test_p0_adjust_tts_speed_respects_cumulative_tempo_cap(monkeypatch, tmp_path):
     """Segment atempo must be budgeted against global narration_speed and TTS rate offset."""
     src = tmp_path / "narr_000.wav"

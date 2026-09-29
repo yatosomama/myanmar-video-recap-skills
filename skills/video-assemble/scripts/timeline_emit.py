@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from audio_mix import _seg_place_window
+from audio_mix import _load_protected_dialogue_plan, _seg_place_window
 from lib import CONFIG, log
 from media import _build_video_clips
 from source_subtitles import _combined_subtitle_entries
@@ -90,7 +90,11 @@ def _emit_timeline(input_video, tts_segments, work_dir, duration_s, canvas, has_
                    "speech": CONFIG["speech_ducking_volume"],
                    "quiet": CONFIG["zone_ducking_volume"],
                    "fade": fade,
-                   "bridge": CONFIG["duck_bridge_seconds"]}
+                   "bridge": CONFIG["duck_bridge_seconds"],
+                   "barriers": [
+                       (max(0.0, row["start"] - 0.12), row["end"] + 0.12)
+                       for row in _load_protected_dialogue_plan(work_dir)
+                   ]}
     subtitle_segments = _timeline_subtitle_segments(tts_segments, work_dir, duration_s)
     timeline = build_timeline(canvas, duration_s, video_clips,
                               narration_segments, bgm=bgm, ducking=ducking,

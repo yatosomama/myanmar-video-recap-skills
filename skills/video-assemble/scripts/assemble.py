@@ -40,7 +40,8 @@ _current_audio_mix_binding = strict_publish.current_audio_mix_binding
 def assemble_video(input_video, tts_segments, work_dir, output_path, *,
                    audio_mode="narration", audio_stream_index=0,
                    narration_adoption_path=None, tts_meta_path=None,
-                   audio_mix_adoption_path=None):
+                   audio_mix_adoption_path=None,
+                   require_original_dialogue_plan=False):
     """组装最终视频"""
     if audio_mode not in AUDIO_MODES:
         raise RuntimeError(f"不支持的 audio_mode: {audio_mode}")
@@ -86,6 +87,12 @@ def assemble_video(input_video, tts_segments, work_dir, output_path, *,
         )
         if audio_mix_adoption_path is not None else None
     )
+    if require_original_dialogue_plan and (
+        audio_mode != "narration" or explicit_mix is not None
+    ):
+        raise RuntimeError(
+            "原声对白高光保护只适用于标准 narration 混音；source-mix / adopted full-sound 不兼容"
+        )
 
     binding = narration_binding.prepare_binding(
         tts_segments, work_dir,
@@ -102,6 +109,13 @@ def assemble_video(input_video, tts_segments, work_dir, output_path, *,
         render_output.unlink(missing_ok=True)
     output_path = render_output
     video_duration = lib.get_video_duration(input_video)
+    protected_dialogue = (
+        audio_mix._load_protected_dialogue_plan(
+            work_dir, required=True, video_duration=video_duration
+        )
+        if require_original_dialogue_plan and audio_mode == "narration"
+        else []
+    )
     canvas = media._probe_canvas(input_video)  # drives subtitle PlayRes/scale so 竖屏 text isn't stretched
     burn_subtitles = lib.CONFIG["burn_subtitles"]
     subtitle_track_binding.prepare_subtitle_track(
@@ -154,6 +168,10 @@ def assemble_video(input_video, tts_segments, work_dir, output_path, *,
                 tts_segments, narration_wav, video_duration, work_dir
             )
         handoffs = audio_mix._apply_source_sentence_handoffs(tts_segments, work_dir, video_duration)
+        if require_original_dialogue_plan:
+            audio_mix._validate_protected_dialogue_plan(
+                tts_segments, protected_dialogue, video_duration
+            )
         if handoffs:
             lib.log(
                 "原声句末交接: "
@@ -256,6 +274,7 @@ def assemble_video(input_video, tts_segments, work_dir, output_path, *,
             has_bgm,
             original_audio_label=original_audio_label,
             bgm_audio_label=bgm_audio_label,
+            protected_dialogue=protected_dialogue,
         )
         # BGM is input [2:a]; -stream_loop -1 loops it to cover the whole timeline (amix
         # duration=first + -t trim it back to the video length).
@@ -449,6 +468,10 @@ def main():
         default="narration", help="audio path (default: narration)",
     )
     ap.add_argument(
+        "--require-original-dialogue-plan", action="store_true",
+        help="require output-time original_subtitles.json and block narration/dialogue overlaps",
+    )
+    ap.add_argument(
         "--audio-stream-index", type=int, default=0,
         help="zero-based input audio stream ordinal for source/adopted modes",
     )
@@ -527,6 +550,7 @@ def main():
             audio_mode=args.audio_mode, audio_stream_index=args.audio_stream_index,
             narration_adoption_path=args.narration_adoption, tts_meta_path=tts_meta,
             audio_mix_adoption_path=args.audio_mix_adoption,
+            require_original_dialogue_plan=args.require_original_dialogue_plan,
         )
         assembly_qc = artifacts._load_work_json(work_dir, constants.ASSEMBLY_QC)
         if assembly_qc["blocking"]:

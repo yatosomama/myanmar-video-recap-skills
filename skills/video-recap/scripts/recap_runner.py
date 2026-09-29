@@ -316,8 +316,35 @@ def _deliver(work_dir, args, assemble_video, recap_stem, timeline, extra_assembl
     if project and project["templates"]:
         project_binding.check_canvas(project, *_probe_display_size_or_raise(assemble_video))
     project_binding.sync_packaging_layers(work_dir, project)
+    if uses_narration(args):
+        dialogue_plan = Path(work_dir) / "original_subtitles.json"
+        if not dialogue_plan.is_file():
+            raise RuntimeError(
+                f"缺少 {dialogue_plan}：请先列出保留的原声对白高光；"
+                "没有需要保留的对白也必须写 []，以免旁白静音策略意外吞掉精彩对白"
+            )
+        try:
+            dialogue_rows = json.loads(dialogue_plan.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(f"原声对白计划无法读取：{dialogue_plan}: {exc}") from exc
+        if not isinstance(dialogue_rows, list):
+            raise RuntimeError("original_subtitles.json 必须是 output-time 条目数组")
+        for index, row in enumerate(dialogue_rows, start=1):
+            try:
+                start, end = float(row["start"]), float(row["end"])
+                text = row["text"].strip()
+            except (AttributeError, KeyError, TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    f"original_subtitles.json 第 {index} 条必须含有效的 start/end/text"
+                ) from exc
+            if start < 0 or end <= start or not text:
+                raise RuntimeError(
+                    f"original_subtitles.json 第 {index} 条时间范围或文本无效"
+                )
     review_ran = _narrate(work_dir, args, timeline) if uses_narration(args) else None
     aargs = [str(assemble_video), "--work-dir", str(work_dir), "--recap-stem", recap_stem]
+    if uses_narration(args):
+        aargs.append("--require-original-dialogue-plan")
     extend_assemble_args(aargs, args)
     if args.output_dir:
         aargs += ["--output-dir", args.output_dir]
@@ -406,7 +433,7 @@ def _run_multi_cut(videos, work_dir, args):
             )
             _pause_for_agent(
                 work_dir,
-                f"{narration_json}（用成片 OUTPUT 时间轴写解说，对着 {edited_source}）",
+                f"{narration_json} 与 original_subtitles.json（都用成片 OUTPUT 时间轴；对白计划只列要保留且实际可听的原声高光，无高光写 []；对着 {edited_source}）",
                 _continuation_command(videos, work_dir, args),
                 inspect_hint=(
                     f"python3 {inspect_py} --work-dir {work_dir} "
@@ -632,7 +659,10 @@ def _run_single(video, work_dir, args):
             if not narration_json.exists():
                 _understand()
                 _write_run_manifest(work_dir, video, args)
-                _pause(f"{narration_json}", state_hint)
+                _pause(
+                    f"{narration_json} 与 original_subtitles.json（列出要保留的原声对白高光；无高光写 []）",
+                    state_hint,
+                )
                 return
             _reject_stale_manifest()
             _run(
@@ -673,7 +703,7 @@ def _run_single(video, work_dir, args):
                 work_dir, clip_plan_identity=cp_identity, edited_source_rendered=True
             )
             _pause(
-                f"{narration_json}（用成片 OUTPUT 时间轴写解说，对着 {edited_source}）",
+                f"{narration_json} 与 original_subtitles.json（都用成片 OUTPUT 时间轴；对白计划只列要保留且实际可听的原声高光，无高光写 []；对着 {edited_source}）",
                 f"python3 {inspect_py} --work-dir {work_dir} "
                 "clip-map --output-start <s> --output-end <e>  # 核对输出↔原片时间轴",
             )

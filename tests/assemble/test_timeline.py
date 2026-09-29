@@ -663,3 +663,44 @@ def test_p0_ducking_ffmpeg_expression_matches_timeline_keyframes(monkeypatch):
         assert _eval_filter_gain(fc, t) == pytest.approx(
             _interp_keyframe_gain(kfs, t), abs=0.015
         )
+
+
+def test_selected_original_dialogue_splits_short_duck_bridge(monkeypatch):
+    """The ffmpeg and JianYing gain curves must both open the protected dialogue gap."""
+    monkeypatch.setitem(CONFIG, "idle_orig_volume", 1.0)
+    monkeypatch.setitem(CONFIG, "speech_ducking_volume", 0.0)
+    monkeypatch.setitem(CONFIG, "zone_ducking_volume", 0.0)
+    monkeypatch.setitem(CONFIG, "duck_fade_seconds", 0.3)
+    monkeypatch.setitem(CONFIG, "duck_bridge_seconds", 1.5)
+    segments = [
+        {"actual_place_start": 2.0, "actual_place_end": 3.0,
+         "source_duck_end": 3.18, "source_restore_at": 3.48,
+         "overlaps_speech": True},
+        {"actual_place_start": 4.6, "actual_place_end": 5.4,
+         "overlaps_speech": True},
+    ]
+    dialogue = [{"start": 3.6, "end": 4.1, "text": "关键原声对白"}]
+    barriers = [(3.48, 4.22)]
+
+    fc = audio_mix._build_audio_filter_complex(
+        segments, protected_dialogue=dialogue
+    )
+    tl = build_timeline(
+        {"width": 100, "height": 100, "fps": 30}, 8.0,
+        [{"source_path": "/source.mp4", "source_start": 0.0,
+          "source_end": 8.0, "timeline_start": 0.0, "timeline_end": 8.0}],
+        [{"source_path": "/narr.wav", "timeline_start": 2.0,
+          "timeline_end": 3.0, "text": "前", "overlaps_speech": True, "gain": 1.0,
+          "source_duck_end": 3.18, "source_restore_at": 3.48},
+         {"source_path": "/narr.wav", "timeline_start": 4.6,
+          "timeline_end": 5.4, "text": "后", "overlaps_speech": True, "gain": 1.0}],
+        ducking={"idle": 1.0, "speech": 0.0, "quiet": 0.0, "fade": 0.3,
+                 "bridge": 1.5, "barriers": barriers},
+    )
+    keyframes = tl["tracks"][0]["clips"][0]["audio"]["volume_keyframes"]
+
+    for when in (3.6, 3.9, 4.1, 4.2):
+        assert _eval_filter_gain(fc, when) == pytest.approx(
+            _interp_keyframe_gain(keyframes, when), abs=1e-6
+        )
+        assert _eval_filter_gain(fc, when) == pytest.approx(1.0)

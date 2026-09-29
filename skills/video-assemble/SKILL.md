@@ -28,12 +28,13 @@ description: >
 
 因此，旁白间隙是主动选择，不是必须填满的空白。不要为了“更满”而加入通用 BGM、压住必须听见的台词或消除有意义的沉默。
 
-当前渲染器不解析 `visual_audio_board.json`；Agent 通过旁白时间、`overlaps_speech`、原声留白与现有混音参数落实这些决定。
+当前渲染器不解析 `visual_audio_board.json`；标准缅甸语旁白流程须把确定保留的对白高光写入 output-time `original_subtitles.json`，并启用 `--require-original-dialogue-plan`。装配器会校验该计划与实际旁白/淡入保护区不冲突；无高光时必须显式写 `[]`。这样 `audio_owner` 不再只停留在创作笔记里。
 
 ## 3. 输入契约
 
 - `<video>`：源视频；cut 模式下为 `edited_source.mp4`。
 - `work_dir/tts_meta.json`：默认 `narration` 模式必需；配音阶段写出的 `{segments: [...]}`。每段包含 `audio_path`、时间、`pause_after_ms`、`overlaps_speech` 和用于混音/字幕的位置。显式 `source-mix` / `adopted-packet-copy` 模式不读取它。
+- `work_dir/original_subtitles.json`：标准缅甸语 narration 流程必需；output-time 精确对白高光 `{start,end,text}` 数组。每条代表必须听见的完整原声对白，无高光写 `[]`；`--require-original-dialogue-plan` 会阻止文件缺失、时间无效或对白与旁白/淡入保护区冲突时出片。
 - 已采用的配音使用显式 `--tts-meta` 和 `--narration-adoption`：后者由调用方独立确认文字、请求的引擎/声线和速度策略，不能从待消费元数据自动“批准”出来。完整格式与记录边界见 `references/narration-adoption.md`。
 - 已采用的完整声音底轨与逐段配音可再传 `--audio-mix-adoption`；严格格式、48 kHz 声道矩阵和双 binding 事务见 `references/explicit-audio-mix.md`。
 
@@ -46,6 +47,7 @@ python3 scripts/assemble.py <video> --work-dir <work_dir> \
   [--audio-mode narration|source-mix|adopted-packet-copy] [--audio-stream-index <N>] \
   [--tts-meta <tts_meta.json> --narration-adoption <narration_adoption.json>] \
   [--audio-mix-adoption <audio_mix_adoption.json>] \
+  [--require-original-dialogue-plan] \
   [--recap-stem <name>] [--output-dir <dir>] [--no-burn-subtitles] \
   [--subtitle-y-top <inclusive-y> --subtitle-y-bot <exclusive-y>] \
   [--source-video <orig.mp4>] [--export-jianying [--jianying-out <dir>]]
@@ -74,6 +76,7 @@ python3 scripts/assemble.py <video> --work-dir <work_dir> \
 - 已采用配音的 v1 合同只支持原速、禁止段内适速；不能让环境默认 1.15 倍速或旧缓存覆盖它。放不下就修订安排，不裁尾。严格运行使用新工作目录与新输出路径；输入/实际混音来源变动或 QC 失败时，不发布候选成片。没有采用文件的旧入口仍是兼容模式，不自动获得同等证据。
 - 原声在旁白结束后保持压低到下一可靠句末的 `pause_start`，只在实测停顿内渐强，
   于 `source_restore_at` 回满；无后续锚点时保持压低到时间线末端，而不是放出半句。
+- `--require-original-dialogue-plan` 把 `original_subtitles.json` 中下一条对白高光当作显式原声交接点；TTS 实际音频与安全淡入区若挤占高光，合成阻断并给出冲突时间。调整旁白/剪点后重跑，不要移除高光条目来绕过。
 - `--export-jianying` / `EXPORT_JIANYING=1` 可把 `timeline.json` 导出为可编辑草稿。cut 模式应传 `--source-video <orig>`，让草稿引用真实原片区间。
 - 剪映导出默认把视频、音频与图片复制到 `Resources/local/{video,audio,image}`，保持草稿可搬迁；`--jianying-no-bundle-media` 只适合原路径始终可访问的情况。
 - 重叠覆盖物会拆到编号轨道；非空目标目录不会覆盖，而会创建编号兄弟目录。

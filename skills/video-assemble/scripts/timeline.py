@@ -90,7 +90,7 @@ def build_timeline(canvas, duration_s, video_clips, narration_segments,
         if ducking is not None:
             audio["volume_keyframes"] = release_ducking_keyframes(
                 duck_windows, ducking["idle"], ducking["fade"], ts, te,
-                bridge=ducking["bridge"])
+                bridge=ducking["bridge"], barriers=ducking.get("barriers", ()))
             audio["base_gain"] = round(float(ducking["idle"]), 4)
         else:
             audio["base_gain"] = 1.0

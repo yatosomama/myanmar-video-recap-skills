@@ -71,8 +71,8 @@ def ducking_expression(windows, idle, fade):
     return f"max(0,min(1,{idle}{''.join(terms)}))"
 
 
-def coalesce_release_duck_windows(windows, bridge):
-    """Merge [(start, hold_end, gain, restore_at)] while preserving safe releases."""
+def coalesce_release_duck_windows(windows, bridge, barriers=()):
+    """Merge duck windows while preserving safe releases and explicit source-audio barriers."""
     rel = sorted(
         ([float(s), float(e), float(g), max(float(e), float(r))] for s, e, g, r in windows if float(e) > float(s)),
         key=lambda row: row[0],
@@ -80,9 +80,14 @@ def coalesce_release_duck_windows(windows, bridge):
     if not rel:
         return []
     bridge = float(bridge)
+    barriers = [(float(start), float(end)) for start, end in barriers]
     merged = [rel[0][:]]
     for start, end, gain, restore in rel[1:]:
-        if start - merged[-1][1] < bridge:
+        crosses_barrier = any(
+            barrier_start < start and barrier_end > merged[-1][1]
+            for barrier_start, barrier_end in barriers
+        )
+        if start - merged[-1][1] < bridge and not crosses_barrier:
             merged[-1][1] = max(merged[-1][1], end)
             merged[-1][2] = min(merged[-1][2], gain)
             merged[-1][3] = max(merged[-1][1], merged[-1][3], restore)
@@ -91,12 +96,12 @@ def coalesce_release_duck_windows(windows, bridge):
     return merged
 
 
-def release_ducking_expression(windows, idle, attack_fade, bridge=None):
+def release_ducking_expression(windows, idle, attack_fade, bridge=None, barriers=()):
     """FFmpeg gain expression with a fixed attack and a per-window safe release end."""
     attack = float(attack_fade)
     if bridge is None:
         bridge = default_bridge(attack)
-    merged = coalesce_release_duck_windows(windows, bridge)
+    merged = coalesce_release_duck_windows(windows, bridge, barriers=barriers)
     if not merged:
         return None
     idle = float(idle)
@@ -116,7 +121,9 @@ def release_ducking_expression(windows, idle, attack_fade, bridge=None):
     return f"max(0,min(1,{idle}{''.join(terms)}))"
 
 
-def release_ducking_keyframes(windows, idle, attack_fade, span_start, span_end, bridge=None):
+def release_ducking_keyframes(
+    windows, idle, attack_fade, span_start, span_end, bridge=None, barriers=()
+):
     """Timeline keyframes matching `release_ducking_expression` exactly."""
     attack = float(attack_fade)
     if bridge is None:
@@ -127,7 +134,7 @@ def release_ducking_keyframes(windows, idle, attack_fade, span_start, span_end, 
         for start, end, gain, restore in ((float(s), float(e), float(g), float(r)) for s, e, g, r in windows)
         if end > span_start and start < span_end and end > start
     ]
-    merged = coalesce_release_duck_windows(normalized, bridge)
+    merged = coalesce_release_duck_windows(normalized, bridge, barriers=barriers)
     if not merged:
         return []
     points = [(span_start, float(idle))]

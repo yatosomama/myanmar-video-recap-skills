@@ -35,7 +35,7 @@ video-understanding ─▶ Agent 按 video-script 制定方案并写稿 ─▶ [
 
 上表的阶段是 Agent 内部的创作/时间轴切点，不是向用户请求审批的暂停点。输入和默认值齐全时，在同一任务中完成剪片、写稿、TTS、合成和成片检查；不逐项向用户展示中间思考或等待确认。
 
-## 1.1 短剧多集素材接收
+### 短剧多集素材接收
 
 用户要求把前几集剪成解说短片并提供多集视频时，默认采用 `--edit-mode cut --audio-mode narration`，处理本轮提供的全部剧集；本仓库默认旁白语言为缅甸语，默认 Edge TTS 声线沿用 §3。不再询问已经由默认值回答的问题（语言、声线、是否继续、普通交付格式）；没有明确时长要求就让剪辑方案按故事完整度和可用素材决定，不额外停下确认。
 
@@ -46,7 +46,7 @@ video-understanding ─▶ Agent 按 video-script 制定方案并写稿 ─▶ [
 - 文件数量不同、文件名无法配对、SRT 时间轴明显超出相应视频，或无法判断某份 SRT 属于哪一集：先用文件名、集数编号、时间戳范围和字幕内容尝试匹配；仍有多个合理映射时，只问清这些有歧义的项。
 - 用户已经说明集数、时长、画幅、旁白语言/声线或交付目的时沿用其要求；仅当要求互相冲突且会改变成片时才追问。
 
-### 默认快速路径
+#### 默认快速路径
 
 用户没要求逐集精修时，默认用“两阶段、字幕驱动”而不是逐场景长篇分析：
 
@@ -117,7 +117,7 @@ export MULTIMODAL_MODEL=your-vision-model
 
 默认 `--tts-provider edge-tts`，不需 API key，使用缅甸语男声 `my-MM-ThihaNeural`；可用环境变量 `EDGE_TTS_VOICE=my-MM-NilarNeural` 切换为女声，`TTS_PROVIDER` / `--tts-provider` 可显式选择其他 provider。Edge TTS 需要联网。
 
-本仓库默认交付语言是缅甸语。编排、写稿、字幕和旁白要求见 `../video-script/references/myanmar-localization.md`；除非用户明确指定另一种目标语言，不得回退成中文解说。
+本仓库默认交付语言是缅甸语。遵循本技能 references 中的缅甸语本地化规则；除非用户明确指定另一种目标语言，不得回退成中文解说。
 
 旧版 `MIMO_API_KEY` / `MIMO_API_URL` 仍作为兼容回退；旧 Token-Plan 密钥可用 `MIMO_TOKEN_PLAN_CLUSTER` 指定集群。
 
@@ -139,7 +139,7 @@ export MULTIMODAL_MODEL=your-vision-model
 
 ### 4.2 Agent-native 分析与创作
 
-默认由当前 Agent 直接完成分析，不运行需要视觉 API 的 `recap.py` 理解阶段：按 video-understanding 的快速档读 SRT、批量看联系表，只精查候选片段；保存字幕笔记、带时间证据的简短 brief 与联系表。再按 video-script 将故事节拍、爆点、悬念、原声/旁白归属集中记入编辑板，写必要的 `clip_plan.json` 和缅甸语旁白。接着调用本仓库的剪辑、Edge TTS 配音、字幕与合成子技能/工具完成渲染，并按 §4.7 实际检查成片。用户要求完整机器索引时才补齐全部理解 sidecar。不得因为没有 `MULTIMODAL_API_*` 或 ASR 凭证就要求用户配置或停止；仅当宿主不能看视频/图片时才说明限制。
+默认由当前 Agent 直接完成分析，不运行需要视觉 API 的 `recap.py` 理解阶段：按 video-understanding 的快速档读 SRT、批量看联系表，只精查候选片段；保存字幕笔记、带时间证据的简短 brief 与联系表。再按 video-script 将故事节拍、爆点、悬念、原声/旁白归属集中记入编辑板，写必要的 `clip_plan.json`、缅甸语旁白和 output-time `original_subtitles.json`。原声计划只列要保留的完整对白高光；没有高光也写 `[]`。调用 video-assemble 时必须带 `--require-original-dialogue-plan`；若检测到对白与旁白/淡入保护区冲突，调整旁白时间或剪点后重跑，不得删掉高光条目绕过检查。接着调用本仓库的剪辑、Edge TTS 配音、字幕与合成子技能/工具完成渲染，并按 §4.7 实际检查成片。用户要求完整机器索引时才补齐全部理解 sidecar。不得因为没有 `MULTIMODAL_API_*` 或 ASR 凭证就要求用户配置或停止；仅当宿主不能看视频/图片时才说明限制。
 
 用户提供 SRT 时以其内容理解剧情和对白，无需调用 ASR；时间点和画面证据必须通过视频或抽帧核实。每集保持人物名、关系、因果和前后集连续性；解说重点讲清变化、反转和追看钩子，避免逐句复述字幕。字幕和旁白都使用自然缅甸语。
 
@@ -154,7 +154,7 @@ python3 scripts/recap.py <video> --work-dir <work_dir> --context "背景；若�
 命令完成视频理解、写出 `agent_narration_brief.md`，然后暂停。此时按以下顺序执行 `video-script`：
 
 1. 查看创作 brief 与原片故事板。
-2. 先阅读 `../video-script/references/myanmar-localization.md`，再写 `recap_story_plan.json` 和 `visual_audio_board.json`。
+2. 先阅读本技能 references 中的缅甸语本地化规则，再写 `recap_story_plan.json` 和 `visual_audio_board.json`。
 3. full 模式写缅甸语 `narration.json`；cut 模式第一阶段只写 `clip_plan.json`。
 4. cut 模式第二阶段查看剪后故事板，补充输出时间与声音分工，再写 `narration.json`。
 

@@ -115,6 +115,60 @@ def _seg_place_window(seg):
     return seg["actual_place_start"], seg["actual_place_end"]
 
 
+def _load_protected_dialogue_plan(work_dir, *, required=False, video_duration=None):
+    """Load explicitly selected, audible source-dialogue highlights in OUTPUT time."""
+    path = Path(work_dir) / "original_subtitles.json"
+    if not path.exists():
+        if required:
+            raise RuntimeError(
+                "缺少 original_subtitles.json：请列出必须保留的原声对白高光，"
+                "没有高光也要写 []；不能在未声明对白归属时发布旁白成片"
+            )
+        return []
+    data = _load_work_json(work_dir, "original_subtitles.json")
+    if not isinstance(data, list):
+        raise ValueError("original_subtitles.json 必须是 output-time 条目数组")
+    rows = []
+    for index, item in enumerate(data, start=1):
+        if not isinstance(item, dict) or not isinstance(item.get("text"), str):
+            raise ValueError(f"original_subtitles.json 第 {index} 条必须含 start/end/text")
+        try:
+            start, end = float(item["start"]), float(item["end"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"original_subtitles.json 第 {index} 条 start/end 无效") from exc
+        if not (start >= 0 and end > start and item["text"].strip()):
+            raise ValueError(f"original_subtitles.json 第 {index} 条时间或文本无效")
+        if video_duration is not None and end > float(video_duration) + 1e-6:
+            raise ValueError(
+                f"原声对白高光第 {index} 条超出成片范围：{start:.3f}-{end:.3f}s，"
+                f"成片 {float(video_duration):.3f}s"
+            )
+        rows.append({"start": start, "end": end, "text": item["text"].strip()})
+    return rows
+
+
+def _validate_protected_dialogue_plan(tts_segments, dialogue_rows, video_duration):
+    """Reject any selected source-dialogue highlight hidden by narration or its handoff fade."""
+    fade = CONFIG["duck_fade_seconds"]
+    for index, row in enumerate(dialogue_rows, start=1):
+        protected_start = max(0.0, row["start"] - 0.12)
+        protected_end = min(float(video_duration), row["end"] + 0.12)
+        for seg in tts_segments:
+            start, end = _seg_place_window(seg)
+            if end <= start:
+                continue
+            duck_until = max(
+                end + fade,
+                float(seg.get("source_restore_at", end + fade)),
+            )
+            if start < protected_end - 1e-6 and protected_start < duck_until - 1e-6:
+                raise RuntimeError(
+                    f"原声对白高光第 {index} 条（{row['start']:.3f}-{row['end']:.3f}s）"
+                    f"与旁白/原声淡入保护区冲突（解说 {start:.3f}-{end:.3f}s，"
+                    f"原声最早恢复 {duck_until:.3f}s）；请缩短或移动旁白，不得吞掉高光对白"
+                )
+
+
 def _load_sentence_handoff_anchors(work_dir):
     """Load high/medium sentence anchors and their measured pause windows."""
     work_dir = Path(work_dir)
@@ -247,6 +301,7 @@ def _apply_source_sentence_handoffs(tts_segments, work_dir, video_duration):
     fade = CONFIG["duck_fade_seconds"]
     bridge = CONFIG["duck_bridge_seconds"]
     anchors, artifact, evidence_payload = _load_sentence_handoff_anchors(work_dir)
+    protected_dialogue = _load_protected_dialogue_plan(work_dir)
     speech_spans, quiet_windows = _handoff_speech_evidence(work_dir, evidence_payload)
     require_measured = evidence_payload.get("require_measured", False)
     placed = []
@@ -313,7 +368,23 @@ def _apply_source_sentence_handoffs(tts_segments, work_dir, video_duration):
             (anchor for anchor in anchors if anchor["time"] >= run["end"] - 0.01),
             None,
         )
-        if restore_anchor is not None:
+        dialogue_anchor = next(
+            (
+                {**row, "safe_start": max(0.0, row["start"] - 0.12)}
+                for row in protected_dialogue
+                if max(0.0, row["start"] - 0.12) >= run["end"] + fade - 1e-6
+            ),
+            None,
+        )
+        if dialogue_anchor is not None and (
+            restore_anchor is None or dialogue_anchor["safe_start"] < restore_anchor["time"]
+        ):
+            # An explicitly selected, output-time dialogue line is an authored safe handoff
+            # target. Finish the source release immediately before its measured subtitle onset.
+            restore_at = dialogue_anchor["safe_start"]
+            duck_end = max(run["end"], restore_at - fade)
+            status = "protected_dialogue"
+        elif restore_anchor is not None:
             # Hold the source low through its last spoken sample, then fit the release
             # entirely inside the measured pause. Never begin the ramp `fade` seconds
             # before the anchor when that would expose the final source phoneme.
@@ -361,7 +432,7 @@ def _amix_tail(narr_vol, bgm_chain=""):
     return narr + "[orig][narr]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]"
 
 
-def _duck_envelope(tts_segments, idle, speech_vol, quiet_vol, fade, bridge):
+def _duck_envelope(tts_segments, idle, speech_vol, quiet_vol, fade, bridge, barriers=()):
     """Per-beat ducking automation for the ORIGINAL track.
 
     Uses the shared ducking contract: [start-fade,start] pre-roll ramp down,
@@ -379,7 +450,9 @@ def _duck_envelope(tts_segments, idle, speech_vol, quiet_vol, fade, bridge):
         restore_at = max(hold_end, seg.get("source_restore_at", hold_end + fade))
         level = speech_vol if seg["overlaps_speech"] else quiet_vol
         windows.append((start, hold_end, level, restore_at))
-    return release_ducking_expression(windows, idle, fade, bridge=bridge)
+    return release_ducking_expression(
+        windows, idle, fade, bridge=bridge, barriers=barriers
+    )
 
 
 def _bgm_envelope(tts_segments, base, duck, fade, bridge):
@@ -398,6 +471,7 @@ def _build_audio_filter_complex(
     *,
     original_audio_label="0:a",
     bgm_audio_label="2:a",
+    protected_dialogue=(),
 ):
     """Compose the audio tracks into [aout], like a cut-software timeline.
 
@@ -459,7 +533,13 @@ def _build_audio_filter_complex(
     idle = CONFIG["idle_orig_volume"]
     speech_vol = CONFIG["speech_ducking_volume"]
     quiet_vol = CONFIG["zone_ducking_volume"]
-    expr = _duck_envelope(tts_segments, idle, speech_vol, quiet_vol, fade, bridge)
+    barriers = [
+        (max(0.0, row["start"] - 0.12), row["end"] + 0.12)
+        for row in protected_dialogue
+    ]
+    expr = _duck_envelope(
+        tts_segments, idle, speech_vol, quiet_vol, fade, bridge, barriers=barriers
+    )
     if expr:
         n_overlap = sum(1 for s in tts_segments if s["overlaps_speech"])
         n_quiet = len(tts_segments) - n_overlap
