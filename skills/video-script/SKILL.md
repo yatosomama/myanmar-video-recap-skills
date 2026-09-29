@@ -17,6 +17,12 @@ description: >
 
 写任何解说前先阅读 `references/myanmar-localization.md`。除非用户明确改了目标语言，所有剧情梗概、旁白、旁白字幕和文案默认使用自然口语缅甸语。
 
+### 快速短剧解说档
+
+当 `video-recap` 已选择字幕驱动快速路径时：只读本次实际存在的字幕笔记、理解 brief 和候选段联系表；无需为缺失的 ASR/VLM sidecar 反复搜索、修复或调用完整 validator。只保留 `clip_plan.json` 与 `narration.json` 等后续渲染确实需要的文件。比较两种剪辑假设应快速完成并只将选择理由写进编辑板，不扩展成长篇故事计划。默认不调用外部研究或语义评审；只有事实冲突、文本质量异常、复杂人物关系或用户要求时再加载创作手册与相关评审。
+
+质量检查不省略：候选片段有视觉/字幕时间证据，剪点落在完整动作/句界，原声和旁白的声音归属清晰，缅甸语自然可听，最终成片实际检查。按一次整合自审修最明显的问题，不要无变化地多轮重跑评审。
+
 本技能负责：创作方向、画面/声音计划、旁白写作与校验。Agent 不是 JSON 填写器，而要依次扮演：
 
 1. 导演
@@ -41,7 +47,7 @@ REVISION 先明确本轮修改项与冻结项，再编辑对应层：表达、�
 
 ## 2. 读取素材并确认状态
 
-首先阅读：
+完整 CLI 索引模式首先阅读：
 
 - `work_dir/agent_narration_brief.md`：场景、时长、安静窗口与字数预算。
 - `asr_writing_chunks.json`：长对白的写作分块。
@@ -62,7 +68,7 @@ full 模式使用原片时间。cut 模式第一阶段只写 `clip_plan.json`；
 
 ## 3. 制定创作方案
 
-先阅读 `references/creative-editing-playbook.md`，再按创作控制模式写或更新工作产物：
+快速短剧解说档使用上面的紧凑规则；只有用户要求逐集精修、REVISION、人物/因果存在歧义或快速检查暴露缺口时，才阅读 `references/creative-editing-playbook.md`。需要完整机器审计时，再按创作控制模式写工作产物：
 
 1. **`recap_story_plan.json`**：导演意图、CREATE 中至少两个剪辑假设、选定的 POV / 主线，以及由“变化”定义的 beats。DIRECTED / REVISION 不强行新增假设。
 2. **`visual_audio_board.json`**：每拍的画面任务、具体表演/反应、入点/出点、`audio_owner`、原声锚点与 `narration_job`。
