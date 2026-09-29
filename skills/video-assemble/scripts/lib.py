@@ -92,7 +92,7 @@ CONFIG = {
     ),  # off | opt_in | safe | forced；MASK_SOURCE_SUBTITLES alone is legacy implicit and QC-blocking
     "source_subtitle_mask_ratio": env_float("SOURCE_SUBTITLE_MASK_RATIO", 0.14, minimum=0.0),  # 底部遮挡比例
     "source_subtitle_mask_timing": os.environ.get("SOURCE_SUBTITLE_MASK_TIMING", "narration").strip().lower(),  # all | narration；增强版默认仅解说时遮罩
-    "subtitle_mask_opacity": min(1.0, env_float("SUBTITLE_MASK_OPACITY", 0.6, minimum=0.0)),  # 0=透明，1=全黑；增强版默认半透明
+    "subtitle_mask_opacity": min(1.0, env_float("SUBTITLE_MASK_OPACITY", 0.6, minimum=0.0)),  # 仅供旧式 drawbox 遮罩使用；0=透明，1=全黑
     "subtitle_mask_padding": env_int("SUBTITLE_MASK_PADDING", 4, minimum=0),
     "source_subtitle_mask_mode": os.environ.get("SOURCE_SUBTITLE_MASK_MODE", "gaussian_blur").strip().lower(),
     "subtitle_mask_blur_sigma": env_float("SUBTITLE_MASK_BLUR_SIGMA", 36.0, minimum=0.1),

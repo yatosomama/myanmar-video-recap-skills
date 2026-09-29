@@ -214,7 +214,7 @@ python3 scripts/recap.py <video> --work-dir <work_dir> --mimo-qc both
 python3 tools/measure_subtitle.py <video>
 ```
 
-再传入测得的 `--subtitle-y-top/--subtitle-y-bot`。坐标基于 ffmpeg 自动旋转后的显示画布，区间为半开 `[top, bot)`，支持底对齐 ASS 样式（1/2/3）或模糊带居中（5）。居中模式把每条字幕锚定在实测字幕带中央；显式设置后，该区域默认使用 60% 透明度的旁白窗口遮罩。
+再传入测得的 `--subtitle-y-top/--subtitle-y-bot`。坐标基于 ffmpeg 自动旋转后的显示画布，区间为半开 `[top, bot)`，支持底对齐 ASS 样式（1/2/3）或模糊带居中（5）。居中模式把每条字幕锚定在实测字幕带中央；显式设置后，该区域默认在旁白窗口使用局部高斯模糊，默认 sigma 为 1080p 高度下 36 像素并随分辨率缩放。`SUBTITLE_MASK_OPACITY` 只控制显式选择的旧式纯色遮罩。
 
 解说模式如需克隆参考声音，使用 `--voice-ref <audio>`；它与 dub 模式不同。
 

@@ -403,12 +403,16 @@ def test_assemble_main_creates_missing_output_dir(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("explicit_opacity_env", "expected_opacity"),
-    [(None, 1.0), ("0.75", 0.75)],
-    ids=("ambient-opacity-forced-opaque", "explicit-opacity-preserved"),
+    ("mask_mode", "explicit_opacity_env", "expected_opacity"),
+    [
+        ("gaussian_blur", None, 0.6),
+        ("drawbox", None, 1.0),
+        ("drawbox", "0.75", 0.75),
+    ],
+    ids=("gaussian-blur-ignores-opacity", "legacy-mask-forces-opaque", "legacy-explicit-opacity"),
 )
 def test_assemble_main_applies_explicit_measured_subtitle_band(
-    monkeypatch, tmp_path, explicit_opacity_env, expected_opacity
+    monkeypatch, tmp_path, mask_mode, explicit_opacity_env, expected_opacity
 ):
     video = tmp_path / "input.mp4"
     video.write_bytes(b"video")
@@ -440,6 +444,7 @@ def test_assemble_main_applies_explicit_measured_subtitle_band(
         "mask_source_subtitles": False,
         "source_subtitle_mask_policy": "off",
         "source_subtitle_mask_policy_declared": False,
+        "source_subtitle_mask_mode": mask_mode,
         "subtitle_mask_opacity": 0.6,
     }.items():
         monkeypatch.setitem(CONFIG, key, value)

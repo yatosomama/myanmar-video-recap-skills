@@ -512,11 +512,12 @@ def main():
         lib.CONFIG["mask_source_subtitles"] = True
         lib.CONFIG["source_subtitle_mask_policy"] = "opt_in"
         lib.CONFIG["source_subtitle_mask_policy_declared"] = True
-        # A measured band is an explicit request to conceal the known source-caption
-        # pixels.  The general 0.6 translucent look can leave white glyphs visible under
-        # the generated subtitles; use an opaque mask unless the caller deliberately
-        # chose a different opacity through the existing environment override.
-        if "SUBTITLE_MASK_OPACITY" not in os.environ:
+        # The Gaussian mode ignores opacity. Preserve the opaque measured-band default
+        # only for the legacy solid mask, unless the caller configured its opacity.
+        if (
+            lib.CONFIG["source_subtitle_mask_mode"] not in {"gaussian_blur", "gblur"}
+            and "SUBTITLE_MASK_OPACITY" not in os.environ
+        ):
             lib.CONFIG["subtitle_mask_opacity"] = 1.0
     if args.source_video:
         if not os.path.exists(args.source_video):
