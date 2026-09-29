@@ -48,10 +48,10 @@ def env_float(name, default, *, minimum=None):
 # Cross-language source: when the original audio is in a language the narration is NOT in
 # (e.g. a Japanese drama recapped in Chinese), the original speech bleeding under the narration
 # is just noise the viewer can't parse — it reads as 怪音. In that mode the original is ducked to
-# near-silent UNDER narration; it still plays full-volume in the original-audio gap blocks, where
+# silent UNDER narration; it still plays full-volume in the original-audio gap blocks, where
 # a single language is fine. Explicit SPEECH_DUCKING_VOLUME / ZONE_DUCKING_VOLUME still override.
 _foreign_source_audio = env_bool("FOREIGN_SOURCE_AUDIO", False)
-_foreign_under_narration_volume = 0.05  # original volume under narration when source audio is foreign
+_foreign_under_narration_volume = 0.0  # Burmese narration must not overlap audible foreign dialogue
 
 CONFIG = {
     "fade_ms": env_int("FADE_MS", 120, minimum=0),  # 每段 TTS 淡入淡出(ms)；过大会让紧凑的句子一顿一顿，120ms 防爆音又不发闷
@@ -68,7 +68,7 @@ CONFIG = {
     # ducking volumes below. Declared so callers can see which policy is in effect.
     "foreign_source_audio": _foreign_source_audio,
     "zone_ducking_volume": env_float("ZONE_DUCKING_VOLUME",
-        _foreign_under_narration_volume if _foreign_source_audio else 0.12, minimum=0.0),  # 解说时原声压低到的音量
+        _foreign_under_narration_volume if _foreign_source_audio else 0.0, minimum=0.0),  # 默认旁白时不混入原片人声；需保留分离伴奏时单独加 BGM
     "idle_orig_volume": env_float("IDLE_ORIG_VOLUME", 1.0, minimum=0.0),  # 解说块之间的"原声块"音量：默认满音量(1.0)，让精彩原声整段放出来，不被压低（用户要求解说成块、原声也成块）
     "duck_fade_seconds": env_float("DUCK_FADE_SECONDS", 0.3, minimum=0.0),  # 解说块/原声块切换的淡入淡出(秒)，略放宽到 0.3 让满音量↔压低的过渡更顺
     "duck_bridge_seconds": env_float("DUCK_BRIDGE_SECONDS", 1.5, minimum=0.0),  # 仅把间隔小于此值的相邻解说窗口并成一段压低；超过则视为作者特意留的"原声块"，原声放回满音量。默认 1.5s：解说块内部连续压低，块与块之间的留白放出满音量原声。该值只控制短间隔合并，不设定旁白/原声配额。调大→更连续铺底、原声块更少；调小→更碎
@@ -104,7 +104,7 @@ CONFIG = {
     "narration_tail_pad_seconds": 0.1,  # 解说尾部最少留白；短 slot 会自动压低 delay 避免截断
     "quiet_overlap_min_ratio": 0.8,  # 解说段至少多少比例落在安静窗口内才标记为非对白重叠
     "speech_ducking_volume": env_float("SPEECH_DUCKING_VOLUME",
-        _foreign_under_narration_volume if _foreign_source_audio else 0.2, minimum=0.0),    # 解说与对白重叠时原声音量
+        _foreign_under_narration_volume if _foreign_source_audio else 0.0, minimum=0.0),    # 默认旁白与原片对白不叠加；可显式覆盖
     "burn_subtitles": env_bool("BURN_SUBTITLES", True),  # 烧录解说字幕（默认开；遮挡原字幕后需自带字幕，否则字幕区空白）
     "subtitle_original_in_gaps": env_bool("SUBTITLE_ORIGINAL_IN_GAPS", True),  # 原声留白处补烧原声台词字幕（来自 ASR）
     "force_video_reencode": env_bool("FORCE_VIDEO_REENCODE", False),  # 组装时重编码视频，修复部分容器时间戳问题
