@@ -129,6 +129,26 @@ def test_shared_craft_guide_includes_required_evidence():
     assert 'clip_plan.json.required_evidence' in playbook.read_text(encoding='utf-8')
 
 
+def test_fast_path_modes_use_existing_plan_and_evidence_placement():
+    script = _skill_path("video-script").read_text(encoding="utf-8")
+    recap = _skill_path("video-recap").read_text(encoding="utf-8")
+    guide_path = SKILLS_ROOT / "video-script/references/retention-modes.md"
+    guide = guide_path.read_text(encoding="utf-8")
+    assert "references/retention-modes.md" in script
+    for mode in ("conflict", "reveal", "emotion", "story"):
+        assert f"`{mode}`" in guide
+    assert "最多比较三个真实开头" in script and "最多比较三个真实开头" in recap
+    assert "不新增编辑板 JSON" in guide
+    assert "不按估计字数提前恢复原声" in guide
+    assert "完整版本" in guide
+    contract = _json_fences(guide_path)[0]
+    ids = {node["id"] for node in contract["nodes"]}
+    assert contract["opening"]["node_id"] in ids
+    assert contract["closing"]["node_id"] in ids
+    assert contract["before"] == [["hook", "payoff"]]
+    assert "actual_gap_seconds" in guide
+
+
 def test_research_guides_match_their_own_stage_timing():
     recap_guide = (SKILLS_ROOT / "video-understanding" / "references" / "research-guide.md").read_text(encoding="utf-8")
     script_guide = (SKILLS_ROOT / "video-script" / "references" / "research-guide.md").read_text(encoding="utf-8")

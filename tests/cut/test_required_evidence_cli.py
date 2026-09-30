@@ -138,7 +138,7 @@ def run_real_cut(source, work, raw, *options):
     result = subprocess.run([
         sys.executable, str(Path(cut_cli.__file__).with_name('cut.py')),
         str(source), '--work-dir', str(work), *options,
-    ], env={**os.environ, 'SCENE_CUT_SNAP': '0', 'SNAP_CLIP_LINE_END': '0',
+    ], env={**os.environ, 'PYTHONUTF8': '1', 'SCENE_CUT_SNAP': '0', 'SNAP_CLIP_LINE_END': '0',
             'CLIP_PADDING': '0'}, capture_output=True, text=True, encoding='utf-8', errors='replace')
     return result, json.loads((work / 'clip_plan_validated.json').read_text(encoding='utf-8'))
 
@@ -203,3 +203,52 @@ def test_multi_source_audio_must_come_from_the_declared_source(real_source, tmp_
                                     '--sources-manifest', str(manifest), '--normalize-only')
     assert passed.returncode == 0, passed.stdout + passed.stderr
     assert validated['qc']['required_evidence']['selection_status'] == 'PASS'
+
+
+def test_real_hook_payoff_positions_and_revised_cache_gate(real_source, tmp_path):
+    work = tmp_path / 'positions'
+    required = contract(real_source, 'audio')
+    required.update(opening={'node_id': 'refusal', 'max_lead_seconds': 0.5},
+                    closing={'node_id': 'response', 'max_tail_seconds': 0.5})
+    raw = {'clips': [{'start': 2, 'end': 6}], 'required_evidence': required}
+    rendered, validated = run_real_cut(real_source, work, raw)
+    assert rendered.returncode == 0, rendered.stdout + rendered.stderr
+    placements = validated['qc']['required_evidence']['placements']
+    assert placements['opening']['actual_gap_seconds'] == 0.25
+    assert placements['closing']['actual_gap_seconds'] == 0.25
+    media = work / 'edited_source.mp4'
+    original_mtime = media.stat().st_mtime_ns
+    original_bytes = media.read_bytes()
+
+    cached, _ = run_real_cut(real_source, work, raw)
+    assert cached.returncode == 0, cached.stdout + cached.stderr
+    assert media.stat().st_mtime_ns == original_mtime
+
+    required['opening']['max_lead_seconds'] = 0
+    blocked, validated = run_real_cut(real_source, work, raw, '--allow-duration-drift')
+    assert blocked.returncode != 0
+    assert any(f['code'] == 'REQUIRED_EVIDENCE_OPENING'
+               for f in validated['qc']['blocking'])
+    assert not (work / 'cut_delivery_qc.json').exists()
+    assert media.stat().st_mtime_ns == original_mtime
+    assert media.read_bytes() == original_bytes
+
+
+def test_post_snap_lead_is_checked_before_render_cache(run_cut, monkeypatch):
+    run, video = run_cut
+    required = contract(video)
+    required['opening'] = {'node_id': 'refusal', 'max_lead_seconds': 0.5}
+    raw = {'clips': [{'start': 2, 'end': 6}], 'required_evidence': required}
+    assert run(raw, '--normalize-only')['qc']['required_evidence']['selection_status'] == 'PASS'
+
+    def prepend_establishing_shot(plan, *args):
+        clip = plan['clips'][0]
+        clip.update(source_start=1, duration=5, output_end=5)
+        plan['total_duration'] = 5
+        return plan
+
+    monkeypatch.setattr(cut_cli, 'enforce_clip_sentence_boundaries', prepend_establishing_shot)
+    monkeypatch.setattr(cut_cli, 'should_reuse_edited_source',
+                        lambda *a: pytest.fail('misplaced opening reached render cache'))
+    with pytest.raises(SystemExit, match='QC blocking'):
+        run(raw, '--allow-duration-drift')

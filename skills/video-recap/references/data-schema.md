@@ -312,6 +312,15 @@ cut 模式下 Agent 选择要保留的原片片段，数组或 `{ "clips": [...]
 }
 ```
 
+对象形计划可附 `required_evidence`：`nodes` 非空数组，每项包含唯一 `id`、绝对路径 `source`、原片秒 `start/end`、`track`（audio/video）、非空 `content`；多源可填 `source_id`。`before` 必须为数组，用 `[前提id, 结果id]` 记录必要顺序，不约束时填 `[]`。执行器在最终吸附后核对源区间完整连续保留和顺序，音频节点还核对源音轨。
+
+| `required_evidence` 可选字段 | 形状 | 实际输出约束 |
+|---|---|---|
+| `opening` | `{"node_id": "hook", "max_lead_seconds": 1}` | 完整节点开始距成片起点不超过指定秒数 |
+| `closing` | `{"node_id": "payoff", "max_tail_seconds": 1.5}` | 完整节点结束距成片终点不超过指定秒数 |
+
+节点引用必须存在；秒数有限、非负且不能是布尔值。缺省保持原有校验；余量由表演和建立镜头决定。重复节点可以用边界附近的完整出现满足约束，局部片段不能借中段副本过关。
+
 ## clip_plan_validated.json
 
 CLI 校验 `clip_plan.json` 后写出，额外包含输出时间轴：
@@ -338,6 +347,8 @@ CLI 校验 `clip_plan.json` 后写出，额外包含输出时间轴：
 还是 `blocking`。理解阶段已有 ASR 讲话时间时，任何未落到源头/源尾、可靠句末/静音窗，且
 不是同源无损连续连接的边界都会写入 `qc.blocking[].code=unsafe_clip_sentence_boundary`。
 切镜吸附先执行，句末吸附最后执行，保证视觉边界不会覆盖声音安全边界。
+
+存在必保声明时，`qc.required_evidence` 包含 `selection_status`（PASS/BLOCK）、`nodes[].occurrences`（完整保留的输出秒区间）、`findings` 与 `semantic_status: NOT_CHECKED`。声明位置时额外写 `placements.opening/closing`，包含原声明、实测 `actual_gap_seconds`（无完整出现则 null）和 PASS/BLOCK。错位写 `REQUIRED_EVIDENCE_OPENING` / `REQUIRED_EVIDENCE_CLOSING` 并在渲染与缓存复用前阻断；该报告不代表最终混音可听见或语义审片完成。
 
 多视频 validated clip 会额外保留来源字段，供 pass2 brief、timeline 和剪映导出追溯原素材：
 

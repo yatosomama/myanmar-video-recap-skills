@@ -108,12 +108,8 @@ _raw_api_url = (
 CONFIG = {
     "api_provider": _api_provider,
     "api_url": normalize_api_url(_raw_api_url),
-    "api_url_source": "env" if (_multimodal_api_url or os.environ.get("MIMO_API_URL")) else "default",
     "api_key": _mimo_api_key,
     "api_env_var": "MULTIMODAL_API_KEY" if _generic_multimodal else "MIMO_API_KEY",
-    "multimodal_api_configured": bool(
-        (_multimodal_api_url or _multimodal_api_key) and _multimodal_model
-    ) if _generic_multimodal else bool(_legacy_mimo_api_key),
     "vlm_model": _multimodal_model or os.environ.get("MIMO_MODEL", "" if _generic_multimodal else DEFAULT_MIMO_MODEL),
     "mimo_disable_thinking": env_bool("MIMO_DISABLE_THINKING", True),
     # TTS 语速（字符/秒）。实测 mimo-tts 冰糖音色中位 ~3.9 字/秒，可用 SPEECH_RATE 覆盖

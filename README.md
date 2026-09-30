@@ -46,7 +46,7 @@
 决定故事与视听方案、剪辑、写稿、配音、混音和字幕。支持 `.mp4 / .mov / .mkv / .webm`。
 
 - **Agent 直接使用自己的多模态能力。** 安装 skill 后，优先让当前 Agent 直接看视频/抽帧并结合中文字幕理解剧情，不要求配置视觉模型 API。只有独立运行 CLI、自动化处理或宿主没有视觉能力时，才配置兼容的多模态 API。缅甸语旁白默认用 Edge TTS（需 `python -m pip install edge-tts` 和网络连接），不需 GPU，也不下载本地模型。
-- **先做创作决定，再分配声音。** Agent 先比较剪辑假设，把观众承诺、POV、戏剧问题和"发生了什么变化"的 beat 写进 `recap_story_plan.json`，再给每一拍指定画面任务和声音归属：旁白只在有明确任务时整块配音，强对白、动作声或沉默可以完整主导一拍。
+- **按剧情选结构。** 字幕驱动快速路径在冲突、揭示、情感、顺叙四种模式中选一条主线，最多比较三个真实开头；在已有编辑板记录承诺与兑现，并用源片段的位置校验保护开头和结尾。完整策划时可补故事计划。旁白只在有明确任务时整块配音，强对白、动作声或沉默可以完整主导一拍。详见[模式指南](skills/video-script/references/retention-modes.md)。
 - **先剪后配，时间轴天然对齐。** 剪辑模式先把长视频剪成成片，再对着成片写解说；一次可以传多个视频，按 `source_id` 选段剪成一条主线；每个视频的分析沉淀成文件系统素材库，下次直接复用。
 - **成片之外还能继续改。** 多轨时间线 `timeline.json` 可一键导出剪映草稿，原片、解说、BGM、字幕、图片叠层都可编辑；自带一份准确字幕文件就会被当作原声字幕的首选来源。
 - **每一步都留下可核对的记录。** 旁白 lint、组装 QC、交付 QC 和看片修改日志都是机器可读文件；可选的多模态成片顾问只给建议，缺配置、限流或超时都不会阻断出片。
@@ -69,14 +69,14 @@ export MULTIMODAL_MODEL=your-vision-model            # 可选：CLI 后端支持
 在 Claude Code 里执行：
 
 ```text
-/plugin marketplace add zenstory-ai/video-recap-skills
+/plugin marketplace add yatosomama/myanmar-video-recap-skills
 /plugin install video-recap-skills@video-recap
 ```
 
 也可以直接说一句话（支持导入 GitHub 仓库的 Agent 都适用）：
 
 ```text
-安装这个插件：https://github.com/zenstory-ai/video-recap-skills
+安装这个缅甸语改版插件：https://github.com/yatosomama/myanmar-video-recap-skills
 ```
 
 <details>
@@ -85,15 +85,15 @@ export MULTIMODAL_MODEL=your-vision-model            # 可选：CLI 后端支持
 **Codex CLI**
 
 ```bash
-codex plugin marketplace add zenstory-ai/video-recap-skills
+codex plugin marketplace add yatosomama/myanmar-video-recap-skills
 codex plugin add video-recap-skills@video-recap
 ```
 
 **OpenCode**：按[官方 Agent Skills 文档](https://opencode.ai/docs/skills/)，项目级技能放在 `.opencode/skills/<name>/SKILL.md`。克隆仓库后从仓库目录启动：
 
 ```bash
-git clone https://github.com/zenstory-ai/video-recap-skills.git
-cd video-recap-skills
+git clone https://github.com/yatosomama/myanmar-video-recap-skills.git
+cd myanmar-video-recap-skills
 mkdir -p .opencode
 ln -s ../skills .opencode/skills             # Windows 把 skills\* 复制到 .opencode\skills\
 opencode debug skill                         # 应列出全部 6 个技能
@@ -102,7 +102,7 @@ opencode debug skill                         # 应列出全部 6 个技能
 **OpenClaw**：克隆后导入 Claude 插件包：
 
 ```bash
-openclaw plugins install ./video-recap-skills
+openclaw plugins install ./myanmar-video-recap-skills
 openclaw skills list
 ```
 
@@ -129,7 +129,7 @@ export FISH_TTS_REFERENCE_ID=your-voice-model-id  # 可选；默认内置"娱乐
 检查 video-recap 的运行环境，告诉我 Python、ffmpeg/libass 和多模态模型 endpoint 是否就绪。
 ```
 
-> 变更见 [CHANGELOG.md](CHANGELOG.md) 与 [Releases](https://github.com/zenstory-ai/video-recap-skills/releases)。仓库已从 `worldwonderer/video-recap-skills` 迁到 `zenstory-ai/video-recap-skills`，按旧地址安装的用户请重新指向新仓库。
+> 本改版源码与更新在 [yatosomama/myanmar-video-recap-skills](https://github.com/yatosomama/myanmar-video-recap-skills)。已安装原版的用户请更换安装来源；原项目历史变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 看看它的输出
 

@@ -128,7 +128,12 @@ def test_realpath_matching_accepts_an_absolute_symlink(tmp_path):
     source = tmp_path / "episode.mp4"
     source.touch()
     alias = tmp_path / "alias.mp4"
-    alias.symlink_to(source)
+    try:
+        alias.symlink_to(source)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows requires Developer Mode or symlink privilege")
+        raise
     report = check_required_evidence(
         {"nodes": [_node(alias, track="video")], "before": []},
         {"clips": [_clip(10.0, 12.0, 0.0)]},
@@ -156,3 +161,110 @@ def test_invalid_contracts_block_instead_of_raising(tmp_path, make_contract):
     assert report["selection_status"] == "BLOCK"
     assert report["semantic_status"] == "NOT_CHECKED"
     assert report["findings"][0]["code"] == "REQUIRED_EVIDENCE_INVALID"
+
+
+@pytest.mark.parametrize("placement,limit_key,clip,expected_gap", [
+    ("opening", "max_lead_seconds", (9, 14, 0), 1),
+    ("closing", "max_tail_seconds", (9, 14, 0), 2),
+    ("opening", "max_lead_seconds", (10, 12, 0), 0),
+    ("closing", "max_tail_seconds", (10, 12, 0), 0),
+])
+def test_placement_uses_measured_gap_and_accepts_exact_bound(
+    tmp_path, placement, limit_key, clip, expected_gap
+):
+    source = tmp_path / "episode.mp4"
+    declaration = {"node_id": "premise", limit_key: expected_gap}
+    required = {"nodes": [_node(source)], "before": [], placement: declaration}
+    report = _check(required, [_clip(*clip)], source)
+    assert report["selection_status"] == "PASS"
+    assert report["placements"][placement] == {
+        **declaration, "actual_gap_seconds": expected_gap, "status": "PASS"}
+    if expected_gap:
+        declaration[limit_key] -= 1 / 30
+        blocked = _check(required, [_clip(*clip)], source)
+        assert blocked["selection_status"] == "BLOCK"
+        assert blocked["findings"][0]["code"] == f"REQUIRED_EVIDENCE_{placement.upper()}"
+
+
+@pytest.mark.parametrize("placement,limit_key", [
+    ("opening", "max_lead_seconds"), ("closing", "max_tail_seconds")])
+@pytest.mark.parametrize("bad", [None, [], {}, {"node_id": "missing"},
+                                    {"node_id": ["premise"]}])
+def test_invalid_placement_is_a_blocker(tmp_path, placement, limit_key, bad):
+    source = tmp_path / "episode.mp4"
+    report = _check({"nodes": [_node(source)], "before": [], placement: bad},
+                    [_clip(10, 12, 0)], source)
+    assert report["selection_status"] == "BLOCK"
+    assert report["findings"][0]["code"] == "REQUIRED_EVIDENCE_INVALID"
+
+
+@pytest.mark.parametrize("placement,limit_key", [
+    ("opening", "max_lead_seconds"), ("closing", "max_tail_seconds")])
+@pytest.mark.parametrize("bad_limit", [True, -1, math.inf, math.nan, "1", None])
+def test_placement_margin_rejects_invalid_seconds(tmp_path, placement, limit_key, bad_limit):
+    source = tmp_path / "episode.mp4"
+    report = _check({"nodes": [_node(source)], "before": [],
+                    placement: {"node_id": "premise", limit_key: bad_limit}},
+                    [_clip(10, 12, 0)], source)
+    assert report["selection_status"] == "BLOCK"
+    assert report["findings"][0]["code"] == "REQUIRED_EVIDENCE_INVALID"
+
+
+def test_opening_fragment_cannot_borrow_a_complete_middle_copy(tmp_path):
+    source = tmp_path / "episode.mp4"
+    required = {"nodes": [_node(source)], "before": [],
+                "opening": {"node_id": "premise", "max_lead_seconds": 0}}
+    report = _check(required, [_clip(11, 12, 0), _clip(10, 12, 1)], source)
+    assert report["selection_status"] == "BLOCK"
+    assert report["placements"]["opening"]["actual_gap_seconds"] == 1
+    assert {f["code"] for f in report["findings"]} == {"REQUIRED_EVIDENCE_OPENING"}
+
+
+def test_closing_fragment_cannot_borrow_a_complete_earlier_copy(tmp_path):
+    source = tmp_path / "episode.mp4"
+    required = {"nodes": [_node(source)], "before": [],
+                "closing": {"node_id": "premise", "max_tail_seconds": 0}}
+    report = _check(required, [_clip(10, 12, 0), _clip(11, 12, 2)], source)
+    assert report["selection_status"] == "BLOCK"
+    assert report["placements"]["closing"]["actual_gap_seconds"] == 1
+
+
+def test_complete_repeated_node_can_open_and_close(tmp_path):
+    source = tmp_path / "episode.mp4"
+    required = {"nodes": [_node(source)], "before": [],
+                "opening": {"node_id": "premise", "max_lead_seconds": 0},
+                "closing": {"node_id": "premise", "max_tail_seconds": 0}}
+    report = _check(required, [_clip(10, 12, 0), _clip(20, 25, 2), _clip(10, 12, 7)], source)
+    assert report["selection_status"] == "PASS"
+    assert all(p["actual_gap_seconds"] == 0 for p in report["placements"].values())
+
+
+def test_split_contiguous_hook_and_multi_source_payoff_placement(tmp_path):
+    first, second = tmp_path / "ep1.mp4", tmp_path / "ep2.mp4"
+    required = {"nodes": [
+        _node(first, id="hook", source_id="ep1", track="video"),
+        _node(second, id="payoff", source_id="ep2", start=30, end=32, track="video")],
+        "before": [["hook", "payoff"]],
+        "opening": {"node_id": "hook", "max_lead_seconds": 0},
+        "closing": {"node_id": "payoff", "max_tail_seconds": 0.5}}
+    clips = [_clip(10, 11, 0, source_path=first, source_id="ep1"),
+             _clip(11, 12, 1, source_path=first, source_id="ep1"),
+             _clip(30, 32.5, 2, source_path=second, source_id="ep2")]
+    report = _check(required, clips, first)
+    assert report["selection_status"] == "PASS"
+    assert report["placements"]["closing"]["actual_gap_seconds"] == 0.5
+
+
+def test_empty_plan_and_missing_node_cannot_pass_placement(tmp_path):
+    source = tmp_path / "episode.mp4"
+    required = {"nodes": [_node(source)], "before": [],
+                "opening": {"node_id": "premise", "max_lead_seconds": 0}}
+    report = _check(required, [], source)
+    assert report["selection_status"] == "BLOCK"
+    assert report["placements"]["opening"]["actual_gap_seconds"] is None
+
+
+def test_legacy_report_does_not_add_placement_metadata(tmp_path):
+    source = tmp_path / "episode.mp4"
+    report = _check({"nodes": [_node(source)], "before": []}, [_clip(10, 12, 0)], source)
+    assert "placements" not in report

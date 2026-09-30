@@ -67,14 +67,14 @@ Only standalone CLI/automation runs need a vision API, whose endpoint must accep
 Inside Claude Code:
 
 ```text
-/plugin marketplace add zenstory-ai/video-recap-skills
+/plugin marketplace add yatosomama/myanmar-video-recap-skills
 /plugin install video-recap-skills@video-recap
 ```
 
 Or just ask (any agent that can import a GitHub repository):
 
 ```text
-Install this plugin: https://github.com/zenstory-ai/video-recap-skills
+Install this Myanmar edition: https://github.com/yatosomama/myanmar-video-recap-skills
 ```
 
 <details>
@@ -83,15 +83,15 @@ Install this plugin: https://github.com/zenstory-ai/video-recap-skills
 **Codex CLI**
 
 ```bash
-codex plugin marketplace add zenstory-ai/video-recap-skills
+codex plugin marketplace add yatosomama/myanmar-video-recap-skills
 codex plugin add video-recap-skills@video-recap
 ```
 
 **OpenCode**: the [official Agent Skills documentation](https://opencode.ai/docs/skills/) puts project skills under `.opencode/skills/<name>/SKILL.md`. Clone the repository and start OpenCode from that directory:
 
 ```bash
-git clone https://github.com/zenstory-ai/video-recap-skills.git
-cd video-recap-skills
+git clone https://github.com/yatosomama/myanmar-video-recap-skills.git
+cd myanmar-video-recap-skills
 mkdir -p .opencode
 ln -s ../skills .opencode/skills             # on Windows, copy skills\* into .opencode\skills\
 opencode debug skill                         # should list all 6 skills
@@ -100,7 +100,7 @@ opencode debug skill                         # should list all 6 skills
 **OpenClaw**: after cloning, import the Claude plugin bundle:
 
 ```bash
-openclaw plugins install ./video-recap-skills
+openclaw plugins install ./myanmar-video-recap-skills
 openclaw skills list
 ```
 
@@ -127,7 +127,7 @@ Once installed, ask the agent to check the environment:
 Check the video-recap environment and tell me whether Python, ffmpeg/libass, and the multimodal model endpoint are ready.
 ```
 
-> Changes are in [CHANGELOG.md](CHANGELOG.md) and [Releases](https://github.com/zenstory-ai/video-recap-skills/releases). The repository moved from `worldwonderer/video-recap-skills` to `zenstory-ai/video-recap-skills`; if you installed from the old address, point at the new one.
+> Source and updates for this edition: [yatosomama/myanmar-video-recap-skills](https://github.com/yatosomama/myanmar-video-recap-skills). Replace the installation source if you previously installed the upstream edition. Upstream history is preserved in [CHANGELOG.md](CHANGELOG.md).
 
 ## See what it produces
 

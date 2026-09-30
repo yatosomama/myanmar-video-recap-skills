@@ -1,7 +1,8 @@
 """Validate explicitly required source spans in a normalized constant-speed cut plan.
 
-This checks source-span selection and ordering only.  It does not claim that the
-rendered mix is audible or that the declared content is semantically correct.
+This checks source-span selection, ordering and optional opening/closing placement.
+It does not claim that the rendered mix is audible or that the declared content
+is semantically correct.
 """
 
 import math
@@ -97,7 +98,22 @@ def _validate_contract(contract):
         ):
             raise ValueError("required_evidence.before contains an invalid node pair")
         edges.append((edge[0], edge[1]))
-    return normalized, edges
+    placements = {}
+    for name, limit_key in (("opening", "max_lead_seconds"),
+                            ("closing", "max_tail_seconds")):
+        if name not in contract:
+            continue
+        placement = contract[name]
+        if not isinstance(placement, dict):
+            raise ValueError(f"required_evidence.{name} must be an object")
+        node_id = placement.get("node_id")
+        if not isinstance(node_id, str) or node_id not in ids:
+            raise ValueError(f"required_evidence.{name}.node_id must reference a node")
+        limit = placement.get(limit_key)
+        if not _finite_nonnegative(limit):
+            raise ValueError(f"required_evidence.{name}.{limit_key} must be finite and nonnegative")
+        placements[name] = {"node_id": node_id, limit_key: limit}
+    return normalized, edges, placements
 
 
 def _same(value, expected):
@@ -165,7 +181,7 @@ def check_required_evidence(contract, validated_plan, *, input_video, source_aud
     `source_audio(realpath) -> bool` is consulted only for audio nodes, after the contract
     has been validated, so callers never pre-walk the raw contract to decide whether to probe."""
     try:
-        nodes, edges = _validate_contract(contract)
+        nodes, edges, placements = _validate_contract(contract)
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
         return _invalid(str(exc))
 
@@ -236,9 +252,42 @@ def check_required_evidence(contract, validated_plan, *, input_video, source_aud
                 }
             )
 
-    return {
+    placement_report = {}
+    if placements:
+        # Use final snapped output spans, not raw source times or authored reasons.
+        output_start = min((clip["output_start"] for clip in validated_plan["clips"]), default=0)
+        output_end = max((clip["output_end"] for clip in validated_plan["clips"]), default=0)
+        for name, placement in placements.items():
+            opening = name == "opening"
+            limit_key = "max_lead_seconds" if opening else "max_tail_seconds"
+            occurrences = occurrences_by_id[placement["node_id"]]
+            gap = min(
+                (span["start"] - output_start if opening else output_end - span["end"]
+                 for span in occurrences),
+                default=None,
+            )
+            passed = gap is not None and gap <= placement[limit_key] + _EPSILON
+            placement_report[name] = {
+                **placement, "actual_gap_seconds": gap,
+                "status": "PASS" if passed else "BLOCK",
+            }
+            if not passed:
+                findings.append({
+                    "code": "REQUIRED_EVIDENCE_OPENING" if opening else "REQUIRED_EVIDENCE_CLOSING",
+                    "node_id": placement["node_id"],
+                    "message": (
+                        f"{name} node {placement['node_id']} needs a complete occurrence "
+                        f"within {placement[limit_key]:.9g}s of the output {'start' if opening else 'end'}; "
+                        f"actual gap={gap}"
+                    ),
+                })
+
+    report = {
         "selection_status": "BLOCK" if findings else "PASS",
         "nodes": report_nodes,
         "findings": findings,
         "semantic_status": "NOT_CHECKED",
     }
+    if placements:
+        report["placements"] = placement_report
+    return report

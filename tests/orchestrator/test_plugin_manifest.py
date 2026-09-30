@@ -30,6 +30,9 @@ def test_marketplace_json_present_and_valid():
     # the marketplace entry name must match the plugin manifest name
     assert entry["name"] == plugin["name"] == "video-recap-skills"
     assert entry["source"] == "./"
+    assert entry["homepage"] == "https://github.com/yatosomama/myanmar-video-recap-skills"
+    assert "Myanmar" in entry["description"] and "Edge TTS" in entry["description"]
+    assert "Chinese-narration" not in plugin["description"]
     # source "./" must point at the dir that actually holds the plugin manifest
     assert (ROOT / ".claude-plugin" / "plugin.json").exists()
     # version stays single-sourced in plugin.json; do not pin it in the marketplace entry
@@ -93,7 +96,7 @@ def test_public_readmes_are_skill_first_and_document_verified_hosts():
     }
 
     for language, text in readmes.items():
-        assert "codex plugin marketplace add zenstory-ai/video-recap-skills" in text, language
+        assert "codex plugin marketplace add yatosomama/myanmar-video-recap-skills" in text, language
         assert "codex plugin add video-recap-skills@video-recap" in text, language
         assert "https://opencode.ai/docs/skills/" in text, language
         assert "opencode debug skill" in text, language

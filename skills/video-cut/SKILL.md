@@ -63,6 +63,8 @@ beat_id | function | change | POV | preferred moment | 入点 reason | 出点 re
 
 工具在全部画面/句界吸附后检查每个必保时刻至少有一处完整连续保留、来源和先后；音频节点还检查源音轨是否存在。每次结果出现（包括局部片段）都需满足其声明的前提，不能用后面的完整段替开头缺前提的片段过关。结果写入 `clip_plan_validated.json.qc.required_evidence`；缺段、错序或无效声明会在预检、缓存复用和渲染前阻断，时长放宽选项不会跳过。该结果验证选段保留，实际语义与最终混音仍按审片步骤核对。
 
+可在 `required_evidence` 增加 `opening: {"node_id": "refusal", "max_lead_seconds": 1}` 与 `closing: {"node_id": "response", "max_tail_seconds": 1.5}`，绑定开头与结尾的实际输出位置。节点必须已在 `nodes` 声明，余量必须是有限非负秒数；开头检查完整节点开始距输出起点的距离，结尾检查完整节点结束距输出终点的距离，允许完整建立镜头和反应。重复节点只要有一处完整出现满足相应边界即可；局部开头加中段完整副本不能替开头约束过关。吸附后位置错位同样阻断，`placements` 报告记录 PASS/BLOCK 与 `actual_gap_seconds`。未声明位置时沿用旧选段校验，不新增扫描或语义评分。
+
 下面的 `scripts/...` 均相对于本技能目录。若执行器从仓库根目录启动，请给脚本路径加上本技能的绝对目录。
 
 ## 4. 运行命令

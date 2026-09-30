@@ -178,6 +178,8 @@ def run_cmd(cmd, **kwargs):
         for text in map(str, cmd)
     )
     log(f"运行: {display}")
+    kwargs.setdefault("encoding", "utf-8")
+    kwargs.setdefault("errors", "replace")
     return subprocess.run(cmd, capture_output=True, text=True, **kwargs)
 
 
@@ -200,6 +202,7 @@ def _ffmpeg_reads_option_files():
             fh.write("null")
         result = subprocess.run(["ffmpeg", "-hide_banner", "-/filter_complex", graph],
                                 stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                                encoding="utf-8", errors="replace",
                                 timeout=20)
     return "Unrecognized option" not in result.stderr
 

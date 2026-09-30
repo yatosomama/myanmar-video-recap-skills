@@ -57,6 +57,8 @@ beat 不是固定秒数、场景名或一句旁白；beat 是一次可感知的�
 
 准备移交剪辑时，把这类不可删除的具体源时刻写入同一 `clip_plan.json.required_evidence`：`nodes` 每项记录唯一 `id`、实际文件绝对路径 `source`、原片秒 `start/end`、`track`（audio/video）和 `content`；多源可补 `source_id`。`before` 用 `[前提id, 回应id]` 登记本片必需的顺序。只锁必要区间，不锁整个 beat；不依赖 `reason` 里的“保留前提”一句话。剪辑执行器会在吸附剪点后核对这些要求，缺段时先修选择，再配音包装。
 
+字幕驱动短剧的模式选择与开头/结尾位置约束按 `retention-modes.md`；在已有编辑板快速选定结构，使用同一 `required_evidence` 的 `opening` / `closing` 引用完整节点。先保留可理解的真实承诺和本片兑现，再调整剪点；不以关键词分数或固定切镜频率代替剧情判断。
+
 ### 3. 画面剪辑：选择时刻，而不只选择事件
 
 对每个 beat 做以下判断：

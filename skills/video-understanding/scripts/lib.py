@@ -127,9 +127,6 @@ CONFIG = {
     "api_url": normalize_api_url(_raw_api_url),
     "api_key": _mimo_api_key,
     "api_env_var": "MULTIMODAL_API_KEY" if _generic_multimodal else "MIMO_API_KEY",
-    "multimodal_api_configured": bool(
-        (_multimodal_api_url or _multimodal_api_key) and _multimodal_model
-    ) if _generic_multimodal else bool(_legacy_mimo_api_key),
     "mimo_api_url": normalize_api_url(_raw_api_url),
     "mimo_api_key": _mimo_api_key,
     "mimo_video_api_url": normalize_api_url(_raw_mimo_video_api_url),
@@ -235,6 +232,8 @@ def run_cmd(cmd, **kwargs):
         if len(display) > 2000:
             display = display[:1997] + "..."
     log(f"运行: {display}")
+    kwargs.setdefault("encoding", "utf-8")
+    kwargs.setdefault("errors", "replace")
     return subprocess.run(cmd, capture_output=True, text=True, **kwargs)
 
 def get_video_duration(video_path):
